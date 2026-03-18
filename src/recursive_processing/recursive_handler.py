@@ -397,8 +397,8 @@ class RecursiveHandler:
             image_name = os.path.splitext(os.path.basename(image_path))[0]
             extract_dir = os.path.join(os.path.dirname(image_path), image_name)
             
-            # 尝试解压
-            result = self.extractor.extract(new_path, extract_dir, passwords)
+            # 尝试解压（已经创建了目标文件夹，不需要再创建子文件夹）
+            result = self.extractor.extract(new_path, extract_dir, passwords, create_subfolder=False)
             
             if result.success:
                 self._send_status(f"成功解压单图片文件: {new_path}")

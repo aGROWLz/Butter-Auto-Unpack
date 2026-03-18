@@ -306,17 +306,17 @@ class ConfigDialog(QDialog):
         )
         layout.addRow('', self.verify_media_checkbox)
         
-        # 7z路径
-        seven_zip_layout = QHBoxLayout()
-        self.seven_zip_path_edit = QLineEdit()
-        self.seven_zip_path_edit.setPlaceholderText('7z可执行文件路径')
-        seven_zip_layout.addWidget(self.seven_zip_path_edit)
-        
-        seven_zip_browse_btn = QPushButton('浏览...')
-        seven_zip_browse_btn.clicked.connect(self._browse_seven_zip)
-        seven_zip_layout.addWidget(seven_zip_browse_btn)
-        
-        layout.addRow('7z路径:', seven_zip_layout)
+        # 首选解压软件
+        from PyQt5.QtWidgets import QComboBox
+        self.preferred_extractor_combo = QComboBox()
+        self.preferred_extractor_combo.addItem('Bandizip (推荐)', 'bandizip')
+        self.preferred_extractor_combo.addItem('7-Zip', '7z')
+        self.preferred_extractor_combo.setToolTip(
+            '选择首选的解压软件\n'
+            'Bandizip: 支持更多格式，解压速度更快（推荐）\n'
+            '7-Zip: 经典解压软件，兼容性更好'
+        )
+        layout.addRow('首选解压软件:', self.preferred_extractor_combo)
         
         group.setLayout(layout)
         return group
@@ -334,8 +334,13 @@ class ConfigDialog(QDialog):
         
         # 加载其他配置
         self.image_suffix_edit.setText(self.config.image_archive_suffix)
-        self.seven_zip_path_edit.setText(self.config.seven_zip_path)
         self.verify_media_checkbox.setChecked(self.config.verify_media_files)
+        
+        # 加载首选解压软件设置
+        preferred = getattr(self.config, 'preferred_extractor', 'bandizip')
+        index = self.preferred_extractor_combo.findData(preferred)
+        if index >= 0:
+            self.preferred_extractor_combo.setCurrentIndex(index)
     
     def _browse_target_folder(self) -> None:
         """浏览选择目标文件夹"""
@@ -358,18 +363,6 @@ class ConfigDialog(QDialog):
         
         if folder:
             self.unpack_folder_edit.setText(folder)
-    
-    def _browse_seven_zip(self) -> None:
-        """浏览选择7z可执行文件"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            '选择7z可执行文件',
-            self.seven_zip_path_edit.text() or os.path.expanduser('~'),
-            '可执行文件 (*.exe);;所有文件 (*.*)'
-        )
-        
-        if file_path:
-            self.seven_zip_path_edit.setText(file_path)
     
     def _add_password(self) -> None:
         """添加密码到列表"""
@@ -451,7 +444,6 @@ class ConfigDialog(QDialog):
         target_folder = self.target_folder_edit.text().strip()
         unpack_folder = self.unpack_folder_edit.text().strip()
         image_suffix = self.image_suffix_edit.text().strip()
-        seven_zip_path = self.seven_zip_path_edit.text().strip()
         
         # 验证目标文件夹
         if not target_folder:
@@ -478,10 +470,6 @@ class ConfigDialog(QDialog):
         if not image_suffix.startswith('.'):
             return False, "图片压缩后缀必须以点(.)开头"
         
-        # 验证7z路径
-        if not seven_zip_path:
-            return False, "7z路径不能为空"
-        
         return True, ""
     
     def get_config(self) -> Config:
@@ -495,12 +483,15 @@ class ConfigDialog(QDialog):
         for i in range(self.password_list.count()):
             passwords.append(self.password_list.item(i).text())
         
+        # 获取首选解压软件
+        preferred_extractor = self.preferred_extractor_combo.currentData()
+        
         # 创建新的配置对象
         return Config(
             target_folder=self.target_folder_edit.text().strip(),
             unpack_folder=self.unpack_folder_edit.text().strip(),
             passwords=passwords,
             image_archive_suffix=self.image_suffix_edit.text().strip(),
-            seven_zip_path=self.seven_zip_path_edit.text().strip(),
+            preferred_extractor=preferred_extractor,
             verify_media_files=self.verify_media_checkbox.isChecked()
         )

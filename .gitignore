@@ -72,6 +72,7 @@ desktop.ini
 # Project specific
 file_records.db
 7z2600-extra/
+/Bandizip/
 
 # Documentation and tests (not tracked)
 docs/

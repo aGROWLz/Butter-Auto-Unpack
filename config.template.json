@@ -7,6 +7,6 @@
         "admin"
     ],
     "image_archive_suffix": ".zip",
-    "seven_zip_path": "7z",
+    "preferred_extractor": "bandizip",
     "verify_media_files": false
 }

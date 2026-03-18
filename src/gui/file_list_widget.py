@@ -33,6 +33,7 @@ class FileListWidget(QTableWidget):
     delete_file_clicked = pyqtSignal(int)
     delete_record_clicked = pyqtSignal(int)
     open_folder_clicked = pyqtSignal(int)  # 打开文件夹按钮点击信号
+    extract_clicked = pyqtSignal(int)  # 解压按钮点击信号
     batch_delete_files_clicked = pyqtSignal(list)
     batch_delete_records_clicked = pyqtSignal(list)
     
@@ -254,7 +255,7 @@ class FileListWidget(QTableWidget):
         self.setItem(row, self.COL_STATUS, status_item)
         
         # 操作按钮
-        action_widget = self._create_action_buttons(record.id)
+        action_widget = self._create_action_buttons(record.id, record.status)
         self.setCellWidget(row, self.COL_ACTIONS, action_widget)
     
     def update_record(self, record: FileRecord) -> None:
@@ -330,6 +331,10 @@ class FileListWidget(QTableWidget):
                 status_item.setToolTip(f"{status_text}\n错误: {record.error_message}")
             else:
                 status_item.setToolTip(status_text)
+        
+        # 更新操作按钮（根据新状态）
+        action_widget = self._create_action_buttons(record.id, record.status)
+        self.setCellWidget(row, self.COL_ACTIONS, action_widget)
     
     def _find_record_row(self, record_id: int) -> Optional[int]:
         """查找记录所在行
@@ -346,11 +351,12 @@ class FileListWidget(QTableWidget):
                 return row
         return None
     
-    def _create_action_buttons(self, record_id: int) -> QWidget:
-        """创建操作按钮（打开文件夹、删除文件、删除记录）
+    def _create_action_buttons(self, record_id: int, status: str = '') -> QWidget:
+        """创建操作按钮（根据状态显示不同按钮）
         
         Args:
             record_id: 记录ID
+            status: 记录状态
             
         Returns:
             包含操作按钮的控件
@@ -363,34 +369,64 @@ class FileListWidget(QTableWidget):
         layout.setSpacing(8)
         layout.setAlignment(Qt.AlignVCenter)  # 垂直居中对齐
         
-        # 打开文件夹按钮
-        open_folder_btn = QPushButton('📂 打开')
-        open_folder_btn.setMinimumSize(70, 30)
-        open_folder_btn.setMaximumSize(70, 30)
-        open_folder_btn.setToolTip('打开解压文件夹')
-        open_folder_btn.setCursor(Qt.PointingHandCursor)
-        open_folder_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #17a2b8;
-                border: none;
-                color: white;
-                font-size: 12px;
-                font-weight: bold;
-                border-radius: 4px;
-                margin: 0px;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background-color: #138496;
-            }
-            QPushButton:pressed {
-                background-color: #117a8b;
-            }
-        """)
-        open_folder_btn.clicked.connect(
-            lambda: self.open_folder_clicked.emit(record_id)
-        )
-        layout.addWidget(open_folder_btn)
+        if status == 'pending':
+            # 未解压状态：显示解压按钮
+            extract_btn = QPushButton('▶ 解压')
+            extract_btn.setMinimumSize(70, 30)
+            extract_btn.setMaximumSize(70, 30)
+            extract_btn.setToolTip('点击解压此文件')
+            extract_btn.setCursor(Qt.PointingHandCursor)
+            extract_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #28a745;
+                    border: none;
+                    color: white;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border-radius: 4px;
+                    margin: 0px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #218838;
+                }
+                QPushButton:pressed {
+                    background-color: #1e7e34;
+                }
+            """)
+            extract_btn.clicked.connect(
+                lambda: self.extract_clicked.emit(record_id)
+            )
+            layout.addWidget(extract_btn)
+        else:
+            # 其他状态：显示打开文件夹按钮
+            open_folder_btn = QPushButton('📂 打开')
+            open_folder_btn.setMinimumSize(70, 30)
+            open_folder_btn.setMaximumSize(70, 30)
+            open_folder_btn.setToolTip('打开解压文件夹')
+            open_folder_btn.setCursor(Qt.PointingHandCursor)
+            open_folder_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #17a2b8;
+                    border: none;
+                    color: white;
+                    font-size: 12px;
+                    font-weight: bold;
+                    border-radius: 4px;
+                    margin: 0px;
+                    padding: 0px;
+                }
+                QPushButton:hover {
+                    background-color: #138496;
+                }
+                QPushButton:pressed {
+                    background-color: #117a8b;
+                }
+            """)
+            open_folder_btn.clicked.connect(
+                lambda: self.open_folder_clicked.emit(record_id)
+            )
+            layout.addWidget(open_folder_btn)
         
         # 删除文件按钮
         delete_file_btn = QPushButton('删除文件')
@@ -484,6 +520,7 @@ class FileListWidget(QTableWidget):
             状态显示文本
         """
         status_map = {
+            'pending': '未解压',
             'moved': '已移动',
             'extracting': '解压中',
             'success': '解压成功',
@@ -491,6 +528,7 @@ class FileListWidget(QTableWidget):
             'password_error': '密码错误',
             'corrupted': '文件损坏',
             'recursive_processing': '递归处理中',
+            'archive_deleted': '包已删除',
             'deleted': '已删除'
         }
         return status_map.get(status, status)
@@ -505,13 +543,15 @@ class FileListWidget(QTableWidget):
             状态颜色，如果没有特殊颜色返回None
         """
         color_map = {
-            'moved': QColor(30, 60, 90),      # 深蓝色
-            'extracting': QColor(80, 70, 30), # 深黄色
-            'success': QColor(30, 80, 30),    # 深绿色
-            'failed': QColor(80, 30, 30),     # 深红色
-            'password_error': QColor(90, 60, 30), # 深橙色
+            'pending': QColor(80, 60, 20),     # 深橙色（未解压）
+            'moved': QColor(60, 80, 60),       # 深绿色
+            'extracting': QColor(80, 60, 20),  # 深橙色
+            'success': QColor(40, 80, 40),     # 深绿色
+            'failed': QColor(80, 40, 40),      # 深红色
+            'password_error': QColor(80, 40, 80),  # 深紫色
             'corrupted': QColor(90, 30, 30),  # 更深红色
             'recursive_processing': QColor(60, 50, 90), # 深紫色
+            'archive_deleted': QColor(60, 60, 80),  # 深蓝色（包已删除）
             'deleted': QColor(60, 60, 60)     # 深灰色
         }
         return color_map.get(status)
@@ -533,13 +573,15 @@ class FileListWidget(QTableWidget):
             return None
         
         icon_map = {
-            'moved': QStyle.SP_FileDialogDetailedView,
+            'pending': QStyle.SP_MediaPlay,      # 播放图标（表示可以解压）
+            'moved': QStyle.SP_DialogSaveButton,
             'extracting': QStyle.SP_BrowserReload,
             'success': QStyle.SP_DialogApplyButton,
-            'failed': QStyle.SP_DialogCancelButton,
-            'password_error': QStyle.SP_MessageBoxWarning,
+            'failed': QStyle.SP_MessageBoxWarning,
+            'password_error': QStyle.SP_MessageBoxQuestion,
             'corrupted': QStyle.SP_MessageBoxCritical,
             'recursive_processing': QStyle.SP_ArrowForward,
+            'archive_deleted': QStyle.SP_DialogNoButton,  # 禁止图标
             'deleted': QStyle.SP_TrashIcon
         }
         

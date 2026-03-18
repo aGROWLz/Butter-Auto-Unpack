@@ -52,13 +52,21 @@ class ConfigManager:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
+            # 处理新旧配置兼容性：如果存在 seven_zip_path，转换为 preferred_extractor
+            preferred_extractor = data.get('preferred_extractor', 'bandizip')
+            if 'seven_zip_path' in data and 'preferred_extractor' not in data:
+                # 旧配置，根据 seven_zip_path 判断
+                seven_zip = data.get('seven_zip_path', '7z')
+                if seven_zip and seven_zip != '7z':
+                    preferred_extractor = '7z'
+            
             # Create Config object from loaded data
             config = Config(
                 target_folder=data.get('target_folder', ''),
                 unpack_folder=data.get('unpack_folder', ''),
                 passwords=data.get('passwords', []),
                 image_archive_suffix=data.get('image_archive_suffix', '.zip'),
-                seven_zip_path=data.get('seven_zip_path', '7z'),
+                preferred_extractor=preferred_extractor,
                 verify_media_files=data.get('verify_media_files', False)
             )
             
@@ -94,7 +102,7 @@ class ConfigManager:
             'unpack_folder': config.unpack_folder,
             'passwords': config.passwords,
             'image_archive_suffix': config.image_archive_suffix,
-            'seven_zip_path': config.seven_zip_path,
+            'preferred_extractor': config.preferred_extractor,
             'verify_media_files': config.verify_media_files
         }
         
@@ -137,10 +145,6 @@ class ConfigManager:
         if not config.image_archive_suffix.startswith('.'):
             return False, "Image archive suffix must start with a dot (.)"
         
-        # Validate seven_zip_path
-        if not config.seven_zip_path:
-            return False, "7z path cannot be empty"
-        
         # Passwords can be empty list (optional)
         
         return True, ""
@@ -158,6 +162,6 @@ class ConfigManager:
             unpack_folder='',
             passwords=['password123', '12345678', 'admin'],
             image_archive_suffix='.zip',
-            seven_zip_path='7z',
+            preferred_extractor='bandizip',
             verify_media_files=False
         )

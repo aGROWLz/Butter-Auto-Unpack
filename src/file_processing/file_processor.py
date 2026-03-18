@@ -375,9 +375,9 @@ class FileProcessor:
         
         extract_dir = os.path.join(self.unpack_folder, archive_name)
         
-        # 解压文件
+        # 解压文件（file_processor已经创建了目标文件夹，所以不需要再创建子文件夹）
         self.logger.info(f"调用解压引擎: {file_path} -> {extract_dir}")
-        result = self.extractor.extract(file_path, extract_dir, self.config.passwords)
+        result = self.extractor.extract(file_path, extract_dir, self.config.passwords, create_subfolder=False)
         self.logger.info(f"解压引擎返回: success={result.success}, error_type={result.error_type}")
         
         if result.success:
