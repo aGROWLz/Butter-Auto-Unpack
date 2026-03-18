@@ -250,7 +250,9 @@ class RecursiveHandler:
             items = os.listdir(folder_path)
             self._send_status(f"文件夹 {folder_path} 包含 {len(items)} 个项目")
             
-            # 遍历文件夹中的所有项目
+            # 第一遍扫描：统计文件数量和检测exe
+            temp_archives = []  # 临时存储可能的压缩包
+            
             for item in items:
                 item_path = os.path.join(folder_path, item)
                 
@@ -263,74 +265,57 @@ class RecursiveHandler:
                 # 处理文件
                 result['total_files'] += 1
                 
+                # 检查是否为exe文件
+                if item.lower().endswith('.exe'):
+                    result['has_exe'] = True
+                    result['other_files'].append(item_path)
+                    self._send_status(f"检测到exe文件: {item}")
+                    continue
+                
                 # 检查文件类型
                 file_type = FileTypeDetector.get_file_type(item_path)
                 
                 self._send_status(f"递归分析文件: {item} -> 类型: {file_type}")
                 
                 if file_type in ['archive', 'multi_volume']:
-                    # 检查是否已经处理过
-                    if self.db:
-                        existing_record = self.db.get_record_by_filename(item)
-                        if existing_record and existing_record.status in ['success']:
-                            self._send_status(f"文件已处理过，跳过: {item}")
-                            continue  # 跳过已处理的文件
-                    
-                    # 压缩包文件
-                    result['archives'].append(item_path)
-                    self._send_status(f"添加到处理列表: {item}")
+                    # 压缩包文件，先临时存储
+                    temp_archives.append((item_path, item, file_type))
                 elif file_type in ['image', 'video']:
-                    # 图片或视频文件 - 需要检查是否为伪装的压缩包
-                    if self.config.verify_media_files:
-                        # 验证是否真的是压缩包
-                        if self._is_disguised_archive(item_path):
-                            self._send_status(f"检测到伪装压缩包: {item}")
-                            should_add = True
-                        else:
-                            # 真正的图片/视频文件
-                            result['other_files'].append(item_path)
-                            result['has_other_files'] = True
-                            self._send_status(f"真实媒体文件: {item}")
-                            should_add = False
-                    else:
-                        # 不验证，直接当作伪装压缩包处理
-                        self._send_status(f"跳过验证，检测到媒体文件: {item}")
-                        should_add = True
-                    
-                    if should_add:
-                        # 检查重命名后的文件是否已处理过
-                        new_filename = item + self.config.image_archive_suffix
-                        if self.db:
-                            existing_record = self.db.get_record_by_filename(new_filename)
-                            if existing_record and existing_record.status in ['success']:
-                                self._send_status(f"伪装压缩包已处理过，跳过: {item}")
-                                continue
-                        
-                        # 添加到处理列表（作为需要重命名的伪装压缩包）
-                        result['archives'].append(item_path)
-                        self._send_status(f"添加伪装压缩包到处理列表: {item}")
-                    elif file_type == 'volume_part':
-                        # 分卷文件的非起始卷 - 不算作其他文件，但也不需要处理
-                        self._send_status(f"分卷非起始卷，忽略: {item}")
-                        # 不添加到 other_files，也不设置 has_other_files = True
-                    else:
-                        # 其他类型文件
-                        result['other_files'].append(item_path)
-                        result['has_other_files'] = True
-                        self._send_status(f"其他文件: {item}")
-                        
-                        # 检查是否为exe文件
-                        if item.lower().endswith('.exe'):
-                            result['has_exe'] = True
-                            self._send_status(f"检测到exe文件: {item}")
+                    # 图片或视频文件
+                    result['other_files'].append(item_path)
+                    result['has_other_files'] = True
+                    self._send_status(f"媒体文件: {item}")
+                elif file_type == 'volume_part':
+                    # 分卷文件的非起始卷 - 忽略
+                    self._send_status(f"分卷非起始卷，忽略: {item}")
+                else:
+                    # 其他类型文件
+                    result['other_files'].append(item_path)
+                    result['has_other_files'] = True
+                    self._send_status(f"其他文件: {item}")
+            
+            # 检查是否应该停止递归：多个文件且包含exe
+            if result['total_files'] > 1 and result['has_exe']:
+                result['should_stop_recursion'] = True
+                self._send_status(f"检测到多个文件且包含exe，停止递归并跳过{len(temp_archives)}个压缩包: {folder_path}")
+                # 不处理任何压缩包，直接返回
+                return result
+            
+            # 第二遍处理：处理压缩包（只有在不满足停止条件时才处理）
+            for item_path, item, file_type in temp_archives:
+                # 检查是否已经处理过
+                if self.db:
+                    existing_record = self.db.get_record_by_filename(item)
+                    if existing_record and existing_record.status in ['success']:
+                        self._send_status(f"文件已处理过，跳过: {item}")
+                        continue
+                
+                # 压缩包文件
+                result['archives'].append(item_path)
+                self._send_status(f"添加到处理列表: {item}")
         
         except (OSError, PermissionError) as e:
             self._send_status(f"无法访问文件夹 {folder_path}: {e}")
-        
-        # 检查是否应该停止递归：多个文件且包含exe
-        if result['total_files'] > 1 and result['has_exe']:
-            result['should_stop_recursion'] = True
-            self._send_status(f"检测到多个文件且包含exe，停止递归: {folder_path}")
         
         self._send_status(f"文件夹分析完成: 总文件{result['total_files']}, 压缩包{len(result['archives'])}, 其他{len(result['other_files'])}, 子文件夹{len(result['subfolders'])}, exe:{result['has_exe']}")
         
