@@ -9,7 +9,7 @@ from typing import List, Optional
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QWidget, 
-    QHBoxLayout, QPushButton, QHeaderView
+    QHBoxLayout, QPushButton, QHeaderView, QLabel, QCheckBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QBrush, QIcon, QFont
@@ -20,23 +20,28 @@ from ..database.models import FileRecord
 class FileListWidget(QTableWidget):
     """文件列表控件
     
-    显示文件记录列表，支持排序和操作按钮
+    显示文件记录列表，支持排序和操作按钮，支持多选和批量操作
     
     Signals:
         delete_file_clicked: 删除文件按钮点击信号 (record_id: int)
         delete_record_clicked: 删除记录按钮点击信号 (record_id: int)
+        batch_delete_files_clicked: 批量删除文件信号 (record_ids: List[int])
+        batch_delete_records_clicked: 批量删除记录信号 (record_ids: List[int])
     """
     
     # 定义信号
     delete_file_clicked = pyqtSignal(int)
     delete_record_clicked = pyqtSignal(int)
+    batch_delete_files_clicked = pyqtSignal(list)
+    batch_delete_records_clicked = pyqtSignal(list)
     
     # 列索引常量
-    COL_FILENAME = 0
-    COL_ORIGINAL_PATH = 1
-    COL_MOVED_TIME = 2
-    COL_STATUS = 3
-    COL_ACTIONS = 4
+    COL_CHECKBOX = 0
+    COL_FILENAME = 1
+    COL_ORIGINAL_PATH = 2
+    COL_MOVED_TIME = 3
+    COL_STATUS = 4
+    COL_ACTIONS = 5
     
     def __init__(self, parent=None):
         """初始化文件列表控件
@@ -49,16 +54,22 @@ class FileListWidget(QTableWidget):
         # 存储记录ID映射（行号 -> 记录ID）
         self._record_id_map = {}
         
+        # 批量操作按钮
+        self._batch_buttons_widget = None
+        
         # 初始化表格
         self._init_table()
+        
+        # 不再需要连接itemSelectionChanged信号，因为我们使用复选框
     
     def _init_table(self) -> None:
         """初始化表格结构"""
         # 设置列数
-        self.setColumnCount(5)
+        self.setColumnCount(6)
         
         # 设置表头
         self.setHorizontalHeaderLabels([
+            '选择',
             '文件名',
             '原始路径',
             '移动时间',
@@ -68,12 +79,13 @@ class FileListWidget(QTableWidget):
         
         # 设置表格属性
         self.setSelectionBehavior(QTableWidget.SelectRows)  # 选择整行
-        self.setSelectionMode(QTableWidget.SingleSelection)  # 单选
+        self.setSelectionMode(QTableWidget.SingleSelection)  # 单选模式
         self.setEditTriggers(QTableWidget.NoEditTriggers)  # 不可编辑
         self.setAlternatingRowColors(True)  # 交替行颜色
         
         # 设置列宽模式
         header = self.horizontalHeader()
+        header.setSectionResizeMode(self.COL_CHECKBOX, QHeaderView.Fixed)
         header.setSectionResizeMode(self.COL_FILENAME, QHeaderView.Interactive)
         header.setSectionResizeMode(self.COL_ORIGINAL_PATH, QHeaderView.Stretch)
         header.setSectionResizeMode(self.COL_MOVED_TIME, QHeaderView.ResizeToContents)
@@ -81,6 +93,7 @@ class FileListWidget(QTableWidget):
         header.setSectionResizeMode(self.COL_ACTIONS, QHeaderView.Fixed)
         
         # 设置默认列宽
+        self.setColumnWidth(self.COL_CHECKBOX, 60)
         self.setColumnWidth(self.COL_FILENAME, 200)
         self.setColumnWidth(self.COL_ACTIONS, 220)  # 为两个按钮预留足够空间
         
@@ -97,6 +110,9 @@ class FileListWidget(QTableWidget):
         Args:
             records: 文件记录列表
         """
+        # 保存当前选中的记录ID
+        selected_record_ids = self.get_selected_record_ids()
+        
         # 禁用排序以提高性能
         self.setSortingEnabled(False)
         
@@ -107,6 +123,9 @@ class FileListWidget(QTableWidget):
         # 添加所有记录
         for record in records:
             self.add_record(record)
+        
+        # 恢复选中状态
+        self._restore_checkbox_states(selected_record_ids)
         
         # 重新启用排序
         self.setSortingEnabled(True)
@@ -123,6 +142,48 @@ class FileListWidget(QTableWidget):
         
         # 存储记录ID映射
         self._record_id_map[row] = record.id
+        
+        # 复选框
+        checkbox_widget = QWidget()
+        checkbox_layout = QHBoxLayout(checkbox_widget)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        checkbox_layout.setAlignment(Qt.AlignCenter)
+        
+        checkbox = QCheckBox()
+        checkbox.setStyleSheet("""
+            QCheckBox {
+                spacing: 5px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #666666;
+                border-radius: 3px;
+                background-color: #3c3c3c;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #666666;
+                background-color: #3c3c3c;
+                border-radius: 3px;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #4CAF50;
+                background-color: #4CAF50;
+                border-radius: 3px;
+                image: none;
+            }
+            QCheckBox::indicator:hover {
+                border-color: #4CAF50;
+            }
+            QCheckBox::indicator:checked:hover {
+                background-color: #45a049;
+                border-color: #45a049;
+            }
+        """)
+        checkbox.stateChanged.connect(self._on_checkbox_changed)
+        checkbox_layout.addWidget(checkbox)
+        
+        self.setCellWidget(row, self.COL_CHECKBOX, checkbox_widget)
         
         # 文件名
         filename_item = QTableWidgetItem(record.filename)
@@ -435,3 +496,265 @@ class FileListWidget(QTableWidget):
             return style.standardIcon(icon_type)
         
         return None
+    def _on_selection_changed(self) -> None:
+        """处理选择变化事件"""
+        checked_count = self.get_checked_count()
+        
+        # 如果有多行选中，显示批量操作按钮
+        if checked_count > 1:
+            self._show_batch_buttons()
+        else:
+            self._hide_batch_buttons()
+    
+    def _on_checkbox_changed(self) -> None:
+        """处理复选框状态变化"""
+        checked_count = self.get_checked_count()
+        
+        # 如果有多行选中，显示批量操作按钮
+        if checked_count > 1:
+            self._show_batch_buttons()
+        else:
+            self._hide_batch_buttons()
+    
+    def get_checked_count(self) -> int:
+        """获取选中的复选框数量
+        
+        Returns:
+            选中的复选框数量
+        """
+        count = 0
+        for row in range(self.rowCount()):
+            checkbox_widget = self.cellWidget(row, self.COL_CHECKBOX)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    count += 1
+        return count
+    
+    def get_selected_rows(self) -> List[int]:
+        """获取选中的行号列表
+        
+        Returns:
+            选中的行号列表
+        """
+        selected_rows = []
+        for row in range(self.rowCount()):
+            checkbox_widget = self.cellWidget(row, self.COL_CHECKBOX)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox and checkbox.isChecked():
+                    selected_rows.append(row)
+        return selected_rows
+    
+    def get_selected_record_ids(self) -> List[int]:
+        """获取选中记录的ID列表
+        
+        Returns:
+            选中记录的ID列表
+        """
+        record_ids = []
+        selected_rows = self.get_selected_rows()
+        
+        for row in selected_rows:
+            item = self.item(row, self.COL_FILENAME)
+            if item:
+                record_id = item.data(Qt.UserRole)
+                if record_id:
+                    record_ids.append(record_id)
+        
+        return record_ids
+    
+    def _restore_checkbox_states(self, selected_record_ids: List[int]) -> None:
+        """恢复复选框的选中状态
+        
+        Args:
+            selected_record_ids: 之前选中的记录ID列表
+        """
+        if not selected_record_ids:
+            return
+        
+        for row in range(self.rowCount()):
+            item = self.item(row, self.COL_FILENAME)
+            if item:
+                record_id = item.data(Qt.UserRole)
+                if record_id in selected_record_ids:
+                    # 恢复选中状态
+                    checkbox_widget = self.cellWidget(row, self.COL_CHECKBOX)
+                    if checkbox_widget:
+                        checkbox = checkbox_widget.findChild(QCheckBox)
+                        if checkbox:
+                            checkbox.setChecked(True)
+        
+        # 检查是否需要显示批量操作按钮
+        checked_count = self.get_checked_count()
+        if checked_count > 1:
+            self._show_batch_buttons()
+        else:
+            self._hide_batch_buttons()
+    
+    def _show_batch_buttons(self) -> None:
+        """显示批量操作按钮"""
+        if self._batch_buttons_widget:
+            self._update_selected_count()
+            return
+        
+        # 创建批量操作按钮容器
+        self._batch_buttons_widget = QWidget(self)
+        self._batch_buttons_widget.setStyleSheet("""
+            QWidget {
+                background-color: rgba(60, 60, 60, 240);
+                border: 2px solid #4CAF50;
+                border-radius: 8px;
+                padding: 5px;
+            }
+        """)
+        
+        layout = QHBoxLayout(self._batch_buttons_widget)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(10)
+        
+        # 选中数量标签
+        self._selected_count_label = QLabel()
+        self._selected_count_label.setStyleSheet("color: white; font-weight: bold;")
+        layout.addWidget(self._selected_count_label)
+        
+        layout.addStretch()
+        
+        # 批量删除文件按钮
+        batch_delete_files_btn = QPushButton('批量删除文件')
+        batch_delete_files_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                border: none;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+            QPushButton:pressed {
+                background-color: #bd2130;
+            }
+        """)
+        batch_delete_files_btn.clicked.connect(self._on_batch_delete_files)
+        layout.addWidget(batch_delete_files_btn)
+        
+        # 批量删除记录按钮
+        batch_delete_records_btn = QPushButton('批量删除记录')
+        batch_delete_records_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                border: none;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+                min-width: 100px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+            QPushButton:pressed {
+                background-color: #545b62;
+            }
+        """)
+        batch_delete_records_btn.clicked.connect(self._on_batch_delete_records)
+        layout.addWidget(batch_delete_records_btn)
+        
+        # 取消选择按钮
+        cancel_btn = QPushButton('取消选择')
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                border: none;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 8px 16px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:pressed {
+                background-color: #1e7e34;
+            }
+        """)
+        cancel_btn.clicked.connect(self.clear_all_checkboxes)
+        layout.addWidget(cancel_btn)
+        
+        # 更新选中数量
+        self._update_selected_count()
+        
+        # 显示批量操作按钮
+        self._batch_buttons_widget.show()
+        self._position_batch_buttons()
+    
+    def _hide_batch_buttons(self) -> None:
+        """隐藏批量操作按钮"""
+        if self._batch_buttons_widget:
+            self._batch_buttons_widget.hide()
+            self._batch_buttons_widget.deleteLater()
+            self._batch_buttons_widget = None
+    
+    def _position_batch_buttons(self) -> None:
+        """定位批量操作按钮"""
+        if not self._batch_buttons_widget:
+            return
+        
+        # 将按钮定位在表格底部中央
+        table_rect = self.rect()
+        button_width = 600
+        button_height = 50
+        
+        x = (table_rect.width() - button_width) // 2
+        y = table_rect.height() - button_height - 20
+        
+        self._batch_buttons_widget.setGeometry(x, y, button_width, button_height)
+    
+    def _update_selected_count(self) -> None:
+        """更新选中数量显示"""
+        if not self._batch_buttons_widget or not hasattr(self, '_selected_count_label'):
+            return
+        
+        selected_count = self.get_checked_count()
+        self._selected_count_label.setText(f"已选择 {selected_count} 项")
+    
+    def _on_batch_delete_files(self) -> None:
+        """处理批量删除文件"""
+        record_ids = self.get_selected_record_ids()
+        if record_ids:
+            self.batch_delete_files_clicked.emit(record_ids)
+    
+    def _on_batch_delete_records(self) -> None:
+        """处理批量删除记录"""
+        record_ids = self.get_selected_record_ids()
+        if record_ids:
+            self.batch_delete_records_clicked.emit(record_ids)
+    
+    def clear_all_checkboxes(self) -> None:
+        """清除所有复选框选择"""
+        for row in range(self.rowCount()):
+            checkbox_widget = self.cellWidget(row, self.COL_CHECKBOX)
+            if checkbox_widget:
+                checkbox = checkbox_widget.findChild(QCheckBox)
+                if checkbox:
+                    checkbox.setChecked(False)
+        self._hide_batch_buttons()
+    
+    def resizeEvent(self, event):
+        """重写resize事件，重新定位批量操作按钮"""
+        super().resizeEvent(event)
+        if self._batch_buttons_widget and self._batch_buttons_widget.isVisible():
+            self._position_batch_buttons()
+    
+    def clearSelection(self):
+        """重写清除选择方法"""
+        super().clearSelection()
+        # 不需要隐藏批量按钮，因为复选框状态没有改变

@@ -6,6 +6,7 @@ PyQt5主窗口，协调所有GUI组件和业务逻辑
 """
 
 import os
+from typing import List
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QPushButton, QLabel, QMessageBox, QDialog, QProgressBar
@@ -532,10 +533,16 @@ class MainWindow(QMainWindow):
             QCheckBox::indicator:checked, QRadioButton::indicator:checked {
                 background-color: #4CAF50;
                 border-color: #4CAF50;
+                image: none;
             }
             
             QCheckBox::indicator:hover, QRadioButton::indicator:hover {
                 border-color: #4CAF50;
+            }
+            
+            QCheckBox::indicator:checked:hover, QRadioButton::indicator:checked:hover {
+                background-color: #45a049;
+                border-color: #45a049;
             }
             
             /* 输入框样式 */
@@ -669,6 +676,8 @@ class MainWindow(QMainWindow):
         # 连接信号
         self.file_list_widget.delete_file_clicked.connect(self.on_delete_file_clicked)
         self.file_list_widget.delete_record_clicked.connect(self.on_delete_record_clicked)
+        self.file_list_widget.batch_delete_files_clicked.connect(self.on_batch_delete_files_clicked)
+        self.file_list_widget.batch_delete_records_clicked.connect(self.on_batch_delete_records_clicked)
         main_layout.addWidget(self.file_list_widget, 1)  # 占据剩余空间
         
         # 设置窗口居中
@@ -1005,6 +1014,130 @@ class MainWindow(QMainWindow):
                 
             except Exception as e:
                 QMessageBox.critical(self, '错误', f'删除记录时出错: {e}')
+    
+    def on_batch_delete_files_clicked(self, record_ids: List[int]) -> None:
+        """处理批量删除文件按钮点击
+        
+        Args:
+            record_ids: 记录ID列表
+        """
+        if not self.file_deleter:
+            QMessageBox.warning(self, '错误', '文件删除器未初始化')
+            return
+        
+        if not record_ids:
+            return
+        
+        # 确认对话框
+        reply = QMessageBox.question(
+            self,
+            '确认批量删除',
+            f'确定要删除选中的 {len(record_ids)} 个压缩包吗？\n\n这将只删除压缩包文件，解压文件夹将被保留。',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            success_count = 0
+            failed_count = 0
+            
+            for record_id in record_ids:
+                try:
+                    success, message = self.file_deleter.delete_file(record_id)
+                    if success:
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                        print(f"删除文件失败 (ID: {record_id}): {message}")
+                except Exception as e:
+                    failed_count += 1
+                    print(f"删除文件时出错 (ID: {record_id}): {e}")
+            
+            # 显示结果
+            if failed_count == 0:
+                QMessageBox.information(
+                    self, 
+                    '批量删除完成', 
+                    f'成功删除 {success_count} 个压缩包文件'
+                )
+            else:
+                QMessageBox.warning(
+                    self, 
+                    '批量删除完成', 
+                    f'成功删除 {success_count} 个文件，失败 {failed_count} 个文件'
+                )
+            
+            # 刷新文件列表
+            self.refresh_records()
+    
+    def on_batch_delete_records_clicked(self, record_ids: List[int]) -> None:
+        """处理批量删除记录按钮点击
+        
+        Args:
+            record_ids: 记录ID列表
+        """
+        if not self.file_deleter:
+            QMessageBox.warning(self, '错误', '文件删除器未初始化')
+            return
+        
+        if not record_ids:
+            return
+        
+        # 确认对话框
+        reply = QMessageBox.question(
+            self,
+            '确认批量删除',
+            f'确定要删除选中的 {len(record_ids)} 条记录吗？',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # 询问是否同时删除文件
+            delete_file_reply = QMessageBox.question(
+                self,
+                '删除文件',
+                '是否同时删除对应的文件？',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            also_delete_file = (delete_file_reply == QMessageBox.Yes)
+            
+            success_count = 0
+            failed_count = 0
+            
+            for record_id in record_ids:
+                try:
+                    success, message = self.file_deleter.delete_record(
+                        record_id, 
+                        also_delete_file
+                    )
+                    if success:
+                        success_count += 1
+                    else:
+                        failed_count += 1
+                        print(f"删除记录失败 (ID: {record_id}): {message}")
+                except Exception as e:
+                    failed_count += 1
+                    print(f"删除记录时出错 (ID: {record_id}): {e}")
+            
+            # 显示结果
+            if failed_count == 0:
+                QMessageBox.information(
+                    self, 
+                    '批量删除完成', 
+                    f'成功删除 {success_count} 条记录'
+                )
+            else:
+                QMessageBox.warning(
+                    self, 
+                    '批量删除完成', 
+                    f'成功删除 {success_count} 条记录，失败 {failed_count} 条记录'
+                )
+            
+            # 刷新文件列表
+            self.refresh_records()
     
     def on_config_clicked(self) -> None:
         """打开配置对话框"""
