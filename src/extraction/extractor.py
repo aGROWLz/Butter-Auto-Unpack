@@ -84,7 +84,7 @@ class Extractor:
             # 开发环境
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         
-        return os.path.join(base_path, 'Bandizip', 'bz.exe')
+        return os.path.join(base_path, 'resources', 'bandizip', 'bz.exe')
     
     def check_7z_available(self) -> bool:
         """检查7z是否可用
