@@ -20,6 +20,10 @@ datas = [
     ('resources/7z.exe', 'resources'),
     ('resources/7z.dll', 'resources'),
     
+    # Bandizip工具文件 - 可选的解压工具（支持更多格式）
+    ('resources/bandizip/bz.exe', 'resources/bandizip'),
+    ('resources/bandizip/bz.dll', 'resources/bandizip'),
+    
     # 配置文件模板
     ('config.template.json', '.'),
 ]

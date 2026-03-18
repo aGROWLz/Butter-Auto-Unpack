@@ -132,16 +132,28 @@ class MainWindow(QMainWindow):
         db_path = 'file_records.db'
         self.db = Database(db_path)
         
-        # 初始化Extractor
-        extractor = Extractor()
+        # 根据配置选择首选解压软件
+        preferred = getattr(self.config, 'preferred_extractor', 'bandizip')
+        use_bandizip = (preferred == 'bandizip')
         
-        # 检查7z是否可用
-        if not extractor.check_7z_available():
-            QMessageBox.critical(
-                None,
-                '错误',
-                '7z工具不可用，请检查7z.exe是否存在。'
-            )
+        # 初始化Extractor
+        extractor = Extractor(use_bandizip=use_bandizip)
+        
+        # 检查解压工具是否可用
+        if use_bandizip:
+            if not extractor.check_bandizip_available():
+                QMessageBox.warning(
+                    None,
+                    '警告',
+                    'Bandizip工具不可用，将使用7-Zip作为备选。'
+                )
+        else:
+            if not extractor.check_7z_available():
+                QMessageBox.critical(
+                    None,
+                    '错误',
+                    '7z工具不可用，请检查7z.exe是否存在。'
+                )
         
         # 初始化FileProcessor
         if self.config.unpack_folder:
@@ -677,6 +689,7 @@ class MainWindow(QMainWindow):
         self.file_list_widget.delete_file_clicked.connect(self.on_delete_file_clicked)
         self.file_list_widget.delete_record_clicked.connect(self.on_delete_record_clicked)
         self.file_list_widget.open_folder_clicked.connect(self.on_open_folder_clicked)
+        self.file_list_widget.extract_clicked.connect(self.on_extract_clicked)
         self.file_list_widget.batch_delete_files_clicked.connect(self.on_batch_delete_files_clicked)
         self.file_list_widget.batch_delete_records_clicked.connect(self.on_batch_delete_records_clicked)
         main_layout.addWidget(self.file_list_widget, 1)  # 占据剩余空间
@@ -972,6 +985,64 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, '错误', f'无法打开文件夹: {e}')
     
+    def on_extract_clicked(self, record_id: int) -> None:
+        """处理解压按钮点击
+        
+        Args:
+            record_id: 记录ID
+        """
+        if not self.file_processor:
+            QMessageBox.warning(self, '错误', '文件处理器未初始化')
+            return
+        
+        # 从数据库获取记录
+        record = self.db.get_record_by_id(record_id)
+        if not record:
+            QMessageBox.warning(self, '错误', '找不到该记录')
+            return
+        
+        # 检查文件是否存在
+        import os
+        if not os.path.exists(record.original_path):
+            QMessageBox.warning(self, '错误', f'压缩包文件不存在: {record.original_path}')
+            return
+        
+        # 确认解压
+        reply = QMessageBox.question(
+            self,
+            '确认解压',
+            f'确定要解压该文件吗？\n\n{record.filename}',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                # 更新状态为解压中
+                self.db.update_status(record_id, 'extracting', '开始解压')
+                
+                # 在新线程中处理文件，避免阻塞GUI
+                import threading
+                def process_in_thread():
+                    try:
+                        self.file_processor.process_file(record.original_path)
+                    except Exception as e:
+                        self.logger.error(f'解压失败: {e}')
+                        self.db.update_status(record_id, 'failed', f'解压失败: {e}')
+                
+                thread = threading.Thread(target=process_in_thread, daemon=True)
+                thread.start()
+                
+                # 显示状态消息
+                self._show_status_message(f'开始解压: {record.filename}')
+                
+                # 刷新文件列表
+                self.refresh_records()
+                
+            except Exception as e:
+                QMessageBox.critical(self, '错误', f'解压失败: {e}')
+                self.db.update_status(record_id, 'failed', f'解压失败: {e}')
+    
     def on_delete_file_clicked(self, record_id: int) -> None:
         """处理删除文件按钮点击
         
@@ -1187,26 +1258,92 @@ class MainWindow(QMainWindow):
         if not record_ids:
             return
         
-        # 确认对话框
-        reply = QMessageBox.question(
-            self,
-            '确认批量删除',
-            f'确定要删除选中的 {len(record_ids)} 条记录吗？',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        # 创建自定义对话框（带复选框）
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QCheckBox, QHBoxLayout, QPushButton
         
-        if reply == QMessageBox.Yes:
-            # 询问是否同时删除文件
-            delete_file_reply = QMessageBox.question(
-                self,
-                '删除文件',
-                '是否同时删除对应的文件？',
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            also_delete_file = (delete_file_reply == QMessageBox.Yes)
+        dialog = QDialog(self)
+        dialog.setWindowTitle('确认批量删除 - Butter自动解压')
+        dialog.setMinimumWidth(350)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 14px;
+                padding: 10px;
+            }
+            QCheckBox {
+                color: #ffffff;
+                font-size: 13px;
+                padding: 5px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #666666;
+                border-radius: 3px;
+                background-color: #3c3c3c;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #4CAF50;
+                border-color: #4CAF50;
+            }
+            QPushButton {
+                background-color: #4CAF50;
+                border: none;
+                color: white;
+                padding: 8px 20px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 4px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton#cancelButton {
+                background-color: #6c757d;
+            }
+            QPushButton#cancelButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 提示文字
+        label = QLabel(f'确定要删除选中的 {len(record_ids)} 条记录吗？')
+        layout.addWidget(label)
+        
+        # 复选框
+        checkbox = QCheckBox('同时删除文件（压缩包和解压文件夹）')
+        checkbox.setChecked(False)
+        layout.addWidget(checkbox)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        
+        yes_button = QPushButton('Yes')
+        yes_button.clicked.connect(dialog.accept)
+        button_layout.addWidget(yes_button)
+        
+        no_button = QPushButton('No')
+        no_button.setObjectName('cancelButton')
+        no_button.clicked.connect(dialog.reject)
+        button_layout.addWidget(no_button)
+        
+        layout.addLayout(button_layout)
+        
+        # 显示对话框
+        result = dialog.exec_()
+        
+        if result == QDialog.Accepted:
+            also_delete_file = checkbox.isChecked()
             
             success_count = 0
             failed_count = 0
@@ -1304,8 +1441,12 @@ class MainWindow(QMainWindow):
         if self.file_checker:
             self.file_checker.stop_periodic_check()
         
+        # 根据配置选择首选解压软件
+        preferred = getattr(self.config, 'preferred_extractor', 'bandizip')
+        use_bandizip = (preferred == 'bandizip')
+        
         # 重新初始化Extractor
-        extractor = Extractor()
+        extractor = Extractor(use_bandizip=use_bandizip)
         
         # 重新初始化FileProcessor
         if self.config.unpack_folder:

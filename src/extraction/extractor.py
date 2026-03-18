@@ -33,18 +33,22 @@ class ExtractionResult:
 class Extractor:
     """解压引擎类
     
-    使用打包的7z工具执行解压操作，支持密码尝试和分卷压缩包处理
+    使用打包的7z工具或Bandizip执行解压操作，支持密码尝试和分卷压缩包处理
     """
     
-    def __init__(self, seven_zip_path: str = None):
+    def __init__(self, seven_zip_path: str = None, bandizip_path: str = None, use_bandizip: bool = False):
         """初始化解压引擎
         
         Args:
             seven_zip_path: 7z可执行文件路径，如果为None则使用打包的7z
+            bandizip_path: Bandizip可执行文件路径，如果为None则使用打包的bz.exe
+            use_bandizip: 是否优先使用Bandizip
         """
         self.seven_zip_path = seven_zip_path or self.get_bundled_7z_path()
+        self.bandizip_path = bandizip_path or self.get_bundled_bandizip_path()
+        self.use_bandizip = use_bandizip
         self.logger = get_logger()
-        self.logger.info(f"解压引擎初始化 - 7z路径: {self.seven_zip_path}")
+        self.logger.info(f"解压引擎初始化 - 7z路径: {self.seven_zip_path}, Bandizip路径: {self.bandizip_path}, 使用Bandizip: {use_bandizip}")
     
     def get_bundled_7z_path(self) -> str:
         """获取打包的7z.exe路径
@@ -67,6 +71,21 @@ class Extractor:
         # 回退到精简版7za.exe
         return os.path.join(base_path, 'resources', '7za.exe')
     
+    def get_bundled_bandizip_path(self) -> str:
+        """获取打包的Bandizip路径
+        
+        Returns:
+            bz.exe的完整路径
+        """
+        if getattr(sys, 'frozen', False):
+            # 打包后的exe环境
+            base_path = sys._MEIPASS
+        else:
+            # 开发环境
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        
+        return os.path.join(base_path, 'Bandizip', 'bz.exe')
+    
     def check_7z_available(self) -> bool:
         """检查7z是否可用
         
@@ -81,6 +100,24 @@ class Extractor:
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             # 7z在没有参数时会返回非0，但会输出帮助信息
+            return True
+        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+            return False
+    
+    def check_bandizip_available(self) -> bool:
+        """检查Bandizip是否可用
+        
+        Returns:
+            True如果Bandizip可用，否则False
+        """
+        try:
+            result = subprocess.run(
+                [self.bandizip_path],
+                capture_output=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            # Bandizip在没有参数时会返回非0，但会输出帮助信息
             return True
         except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
             return False
@@ -183,30 +220,148 @@ class Extractor:
                 error_message=f'测试时发生错误: {str(e)}'
             )
     
+    # 常见的压缩包扩展名列表（用于自动切换尝试，只保留Windows常用格式）
+    ARCHIVE_EXTENSIONS = ['.zip', '.rar', '.7z']
+    
+    def _try_extract_with_extensions_and_passwords(self, archive_path: str, output_dir: str, 
+                                                    passwords: List[str] = None) -> Tuple[bool, str, bool]:
+        """尝试使用不同的扩展名和密码组合解压
+        
+        逻辑：
+        1. 对于每个扩展名（包括原始扩展名）：
+           - 先尝试无密码
+           - 如果需要密码，尝试所有密码
+           - 如果都失败，切换到下一个扩展名
+        
+        Args:
+            archive_path: 原始压缩包路径
+            output_dir: 输出目录
+            passwords: 密码列表（可选）
+        
+        Returns:
+            (是否成功, 错误信息, 是否需要密码)
+        """
+        import shutil
+        
+        # 获取文件基础名（去掉最后一个扩展名）和目录
+        file_dir = os.path.dirname(archive_path)
+        file_name = os.path.basename(archive_path)
+        base_name = os.path.splitext(file_name)[0]
+        current_ext = os.path.splitext(file_name)[1].lower()
+        
+        # 构建要尝试的扩展名列表（原始扩展名放第一个）
+        extensions_to_try = [current_ext] if current_ext else []
+        for ext in self.ARCHIVE_EXTENSIONS:
+            if ext.lower() != current_ext:
+                extensions_to_try.append(ext)
+        
+        original_path = archive_path
+        current_path = archive_path
+        
+        for ext in extensions_to_try:
+            # 构建当前尝试的文件路径
+            if ext == current_ext:
+                # 第一次使用原始路径
+                try_path = original_path
+                self.logger.info(f"尝试使用原始扩展名解压: {try_path}")
+            else:
+                # 切换到新扩展名
+                new_name = base_name + ext
+                new_path = os.path.join(file_dir, new_name)
+                
+                # 如果目标文件已存在，跳过
+                if os.path.exists(new_path):
+                    self.logger.debug(f"目标文件已存在，跳过: {new_path}")
+                    continue
+                
+                try:
+                    # 重命名文件
+                    shutil.move(current_path, new_path)
+                    self.logger.info(f"重命名文件尝试解压: {os.path.basename(current_path)} -> {new_name}")
+                    try_path = new_path
+                    current_path = new_path
+                except Exception as e:
+                    self.logger.error(f"重命名文件时出错: {e}")
+                    continue
+            
+            # 步骤1：尝试无密码解压
+            self.logger.debug(f"尝试无密码解压: {try_path}")
+            success, error_msg = self._try_extract_with_bandizip(try_path, output_dir, None)
+            
+            if success:
+                self.logger.info(f"无密码解压成功: {try_path}")
+                return True, '', False
+            
+            # 检查是否需要密码
+            if self._is_password_error(error_msg):
+                self.logger.info(f"检测到需要密码: {try_path}")
+                
+                # 步骤2：尝试所有密码
+                if passwords:
+                    for i, password in enumerate(passwords, 1):
+                        self.logger.debug(f"尝试密码 {i}/{len(passwords)}: {'*' * len(password)}")
+                        success, error_msg = self._try_extract_with_bandizip(try_path, output_dir, password)
+                        
+                        if success:
+                            self.logger.info(f"密码解压成功: {try_path}")
+                            return True, '', False
+                    
+                    self.logger.info(f"所有密码都失败: {try_path}")
+                else:
+                    self.logger.info(f"需要密码但没有提供密码列表: {try_path}")
+                    # 如果当前是原始文件，返回需要密码
+                    if ext == current_ext:
+                        return False, '需要密码', True
+            
+            # 当前扩展名失败，如果是重命名的文件，恢复原文件名
+            if ext != current_ext and os.path.exists(try_path):
+                try:
+                    shutil.move(try_path, original_path)
+                    current_path = original_path
+                    self.logger.debug(f"扩展名 {ext} 失败，恢复原文件名")
+                except:
+                    pass
+        
+        # 所有扩展名都失败了
+        return False, '所有扩展名和密码组合都尝试失败', False
+    
     def extract(self, archive_path: str, output_dir: str, 
-                passwords: List[str] = None) -> ExtractionResult:
-        """解压文件，支持密码尝试和分卷压缩包
+                passwords: List[str] = None,
+                create_subfolder: bool = True) -> ExtractionResult:
+        """解压文件，支持密码尝试和分卷压缩包，自动尝试多种扩展名
         
         Args:
             archive_path: 压缩包路径（对于分卷压缩包，应为起始卷路径）
             output_dir: 解压输出目录
             passwords: 密码列表（可选）
+            create_subfolder: 是否创建以压缩包命名的子文件夹（默认为True，用于递归解压）
         
         Returns:
             ExtractionResult: 解压结果
         """
-        self.logger.info(f"开始解压: {archive_path} -> {output_dir}")
+        # 获取压缩包文件名（不含扩展名）
+        archive_name = os.path.splitext(os.path.basename(archive_path))[0]
+        
+        # 如果启用子文件夹，则解压到以压缩包命名的子文件夹中
+        if create_subfolder:
+            actual_output_dir = os.path.join(output_dir, archive_name)
+        else:
+            actual_output_dir = output_dir
+        
+        self.logger.info(f"开始解压: {archive_path} -> {actual_output_dir}")
         
         # 确保输出目录存在
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(actual_output_dir, exist_ok=True)
         
-        # 首先尝试无密码解压
-        self.logger.debug("尝试无密码解压")
-        success, error_msg = self._try_extract_with_password(archive_path, output_dir, None)
+        # 使用新的方法：自动尝试扩展名和密码组合
+        self.logger.debug("开始尝试解压（自动尝试扩展名和密码组合）")
+        success, error_msg, needs_password = self._try_extract_with_extensions_and_passwords(
+            archive_path, actual_output_dir, passwords
+        )
         
         if success:
-            self.logger.info(f"无密码解压成功: {archive_path}")
-            log_file_operation("解压", archive_path, "成功", "无密码")
+            self.logger.info(f"解压成功: {archive_path}")
+            log_file_operation("解压", archive_path, "成功", "解压完成")
             return ExtractionResult(
                 success=True,
                 error_type='none',
@@ -214,41 +369,23 @@ class Extractor:
                 used_password=None
             )
         
-        # 检查是否需要密码
-        if self._is_password_error(error_msg):
-            self.logger.info("检测到需要密码，开始尝试密码列表")
-            # 如果提供了密码列表，依次尝试
-            if passwords:
-                for i, password in enumerate(passwords, 1):
-                    self.logger.debug(f"尝试密码 {i}/{len(passwords)}: {'*' * len(password)}")
-                    success, error_msg = self._try_extract_with_password(
-                        archive_path, output_dir, password
-                    )
-                    if success:
-                        self.logger.info(f"密码解压成功: {archive_path} (密码: {'*' * len(password)})")
-                        log_file_operation("解压", archive_path, "成功", f"使用密码: {'*' * len(password)}")
-                        return ExtractionResult(
-                            success=True,
-                            error_type='none',
-                            error_message='',
-                            used_password=password
-                        )
-                
-                # 所有密码都失败
-                return ExtractionResult(
-                    success=False,
-                    error_type='password',
-                    error_message='所有密码尝试失败',
-                    used_password=None
-                )
-            else:
-                # 需要密码但没有提供密码列表
-                return ExtractionResult(
-                    success=False,
-                    error_type='password',
-                    error_message='需要密码但未提供密码列表',
-                    used_password=None
-                )
+        # 处理失败情况
+        if needs_password and not passwords:
+            # 需要密码但没有提供密码列表
+            return ExtractionResult(
+                success=False,
+                error_type='password',
+                error_message='需要密码但未提供密码列表',
+                used_password=None
+            )
+        elif needs_password and passwords:
+            # 提供了密码但所有密码都失败
+            return ExtractionResult(
+                success=False,
+                error_type='password',
+                error_message='所有密码尝试失败',
+                used_password=None
+            )
         
         # 解析其他错误类型
         error_type = self._parse_error(error_msg)
@@ -259,9 +396,9 @@ class Extractor:
             used_password=None
         )
     
-    def _try_extract_with_password(self, archive_path: str, 
+    def _try_extract_with_bandizip(self, archive_path: str,
                                    output_dir: str, password: str = None) -> Tuple[bool, str]:
-        """尝试使用指定密码解压
+        """尝试使用Bandizip解压
         
         Args:
             archive_path: 压缩包路径
@@ -271,6 +408,110 @@ class Extractor:
         Returns:
             (是否成功, 错误信息)
         """
+        # 构建Bandizip命令
+        # bz x -o:"output_dir" -p:"password" archive_path
+        cmd = [
+            self.bandizip_path,
+            'x',  # 解压命令
+            f'-o:{output_dir}',  # 输出目录
+        ]
+        
+        # 添加密码参数
+        if password:
+            cmd.append(f'-p:{password}')
+            self.logger.info(f"准备执行Bandizip命令（使用密码）: {cmd[0]} x -o:{output_dir} -p:***")
+        else:
+            self.logger.info(f"准备执行Bandizip命令（无密码）: {cmd[0]} x -o:{output_dir}")
+        
+        # 添加压缩包路径（必须是最后一个参数）
+        cmd.append(archive_path)
+        
+        process = None
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,  # 提供 stdin 以便关闭
+                text=True,
+                encoding='utf-8',
+                errors='ignore',
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+            )
+            
+            self.logger.info(f"Bandizip进程已启动，PID: {process.pid}")
+            
+            # 关闭 stdin，确保不会等待输入
+            if process.stdin:
+                process.stdin.close()
+                self.logger.debug("stdin 已关闭")
+            
+            # 使用 communicate 读取输出，设置超时
+            try:
+                stdout, stderr = process.communicate(timeout=300)
+                returncode = process.returncode
+                
+                self.logger.info(f"Bandizip命令执行完成，返回码: {returncode}")
+                
+                # 记录输出
+                if stdout:
+                    self.logger.info(f"Bandizip stdout:\n{stdout}")
+                if stderr:
+                    self.logger.info(f"Bandizip stderr:\n{stderr}")
+                
+                # 检测密码提示（在输出中）
+                output = stdout + stderr
+                if 'Enter password' in output or 'Invalid password' in output:
+                    self.logger.info("检测到密码提示")
+                    return False, '需要密码'
+                
+                # Bandizip返回0表示成功
+                if returncode == 0:
+                    return True, ''
+                else:
+                    return False, output
+                    
+            except subprocess.TimeoutExpired:
+                self.logger.error("Bandizip进程超时，强制终止")
+                process.kill()
+                process.wait()
+                return False, '解压超时'
+                
+        except Exception as e:
+            self.logger.error(f"Bandizip进程异常: {e}", exc_info=True)
+            if process and process.poll() is None:
+                try:
+                    process.kill()
+                    process.wait()
+                except:
+                    pass
+            return False, f'解压异常: {str(e)}'
+        
+        finally:
+            if process and process.poll() is None:
+                try:
+                    self.logger.warning("Bandizip进程仍在运行，强制终止")
+                    process.kill()
+                    process.wait()
+                except Exception as e:
+                    self.logger.error(f"无法终止Bandizip进程: {e}")
+    
+    def _try_extract_with_password(self, archive_path: str, 
+                                   output_dir: str, password: str = None) -> Tuple[bool, str]:
+        """尝试使用指定密码解压（优先使用配置的解压工具）
+        
+        Args:
+            archive_path: 压缩包路径
+            output_dir: 输出目录
+            password: 密码（可选）
+        
+        Returns:
+            (是否成功, 错误信息)
+        """
+        # 如果配置了使用Bandizip，则优先使用
+        if self.use_bandizip and os.path.exists(self.bandizip_path):
+            return self._try_extract_with_bandizip(archive_path, output_dir, password)
+        
         # 构建7z命令
         cmd = [
             self.seven_zip_path,
@@ -373,7 +614,10 @@ class Extractor:
             'encrypted',
             'password',
             'can not open encrypted archive',
-            'wrong password'
+            'wrong password',
+            '需要密码',  # 中文
+            'enter password',
+            'invalid password'
         ]
         
         error_lower = error_msg.lower()

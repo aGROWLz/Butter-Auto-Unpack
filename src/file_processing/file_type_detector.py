@@ -10,7 +10,16 @@ from typing import Tuple
 class FileTypeDetector:
     """文件类型识别器"""
     
-    ARCHIVE_EXTENSIONS = {'.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'}
+    # 支持的压缩格式扩展名
+    ARCHIVE_EXTENSIONS = {
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.lz', '.lzma',
+        '.cab', '.iso', '.wim', '.swm', '.dmg', '.hfs', '.ntfs', '.fat',
+        '.vhd', '.vhdx', '.vmdk', '.qcow2', '.apm', '.arj', '.chm', '.cpio',
+        '.cramfs', '.deb', '.dmg', '.fat', '.hfs', '.lzh', '.lzma', '.mbr',
+        '.msi', '.msp', '.nsis', '.rpm', '.squashfs', '.udf', '.vhd', '.xar',
+        '.z', '.taz', '.tbz', '.tbz2', '.tgz', '.tpz', '.txz', '.tz', '.tzst',
+        '.zst', '.zstd', '.lz4', '.br', '.brotli'
+    }
     IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
     VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v'}
     

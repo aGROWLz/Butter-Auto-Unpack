@@ -55,24 +55,53 @@ class FileChecker:
     def check_all_files(self) -> List[int]:
         """检查所有已记录文件的存在性
         
+        逻辑：
+        1. 压缩包存在，解压文件夹不存在 → 状态改为 pending（未解压）
+        2. 压缩包不存在，解压文件夹存在 → 状态改为 archive_deleted（包已删除）
+        3. 压缩包不存在，解压文件夹也不存在 → 标记为 deleted（已删除）
+        
         Returns:
             已删除文件的ID列表
         """
         deleted_ids = []
+        updated_to_pending = []
+        updated_to_archive_deleted = []
+        updated_to_success = []
         
-        # 获取所有非"已删除"状态的记录
+        # 获取所有记录
         all_records = self.db.get_all_records()
         
         for record in all_records:
-            # 跳过已经标记为已删除的记录
-            if record.status == 'deleted':
-                continue
+            archive_exists = self.check_file(record.id)
+            folder_exists = self._check_extracted_folder_exists(record)
             
-            # 检查所有文件，不再跳过递归解压的文件
-            # 因为我们需要检查所有压缩包是否被手动删除
-            if not self.check_file(record.id):
-                self.mark_as_deleted(record.id)
-                deleted_ids.append(record.id)
+            if archive_exists and not folder_exists:
+                # 压缩包存在，解压文件夹不存在 → 改为未解压（可以重新解压）
+                if record.status not in ['pending', 'extracting']:
+                    self.db.update_status(record.id, 'pending', '压缩包存在，等待解压')
+                    updated_to_pending.append(record.id)
+            elif not archive_exists and folder_exists:
+                # 压缩包不存在，解压文件夹存在 → 改为包已删除
+                if record.status != 'archive_deleted':
+                    self.db.update_status(record.id, 'archive_deleted', '压缩包已删除，但解压文件夹存在')
+                    updated_to_archive_deleted.append(record.id)
+            elif not archive_exists and not folder_exists:
+                # 压缩包不存在，解压文件夹也不存在 → 标记为已删除
+                if record.status != 'deleted':
+                    self.mark_as_deleted(record.id)
+                    deleted_ids.append(record.id)
+            elif archive_exists and folder_exists:
+                # 压缩包存在，解压文件夹也存在 → 改为解压成功
+                if record.status in ['archive_deleted', 'deleted', 'pending']:
+                    self.db.update_status(record.id, 'success', '压缩包和解压文件夹都存在')
+                    updated_to_success.append(record.id)
+        
+        if updated_to_pending:
+            print(f"检测到 {len(updated_to_pending)} 个文件未解压（可以重新解压）")
+        if updated_to_archive_deleted:
+            print(f"检测到 {len(updated_to_archive_deleted)} 个文件包已删除（但文件夹存在）")
+        if updated_to_success:
+            print(f"检测到 {len(updated_to_success)} 个文件已恢复（压缩包和解压文件夹都存在）")
         
         return deleted_ids
     
