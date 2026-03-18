@@ -8,6 +8,5 @@
     ],
     "image_archive_suffix": ".zip",
     "seven_zip_path": "7z",
-    "verify_media_files": false,
-    "test_with_passwords": false
+    "verify_media_files": false
 }

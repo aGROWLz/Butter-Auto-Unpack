@@ -535,7 +535,7 @@ class RecursiveHandler:
         try:
             # 根据配置决定是否使用密码测试
             passwords = None
-            if self.config.test_with_passwords and self.config.passwords:
+            if self.config.verify_media_files and self.config.passwords:
                 passwords = self.config.passwords
                 self._send_status(f"使用密码库测试文件: {os.path.basename(file_path)}")
             else:

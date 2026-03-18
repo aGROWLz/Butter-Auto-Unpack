@@ -297,20 +297,12 @@ class ConfigDialog(QDialog):
         layout.addRow('图片压缩后缀:', self.image_suffix_edit)
         
         # 媒体文件验证开关
-        self.verify_media_checkbox = QCheckBox('验证图片和视频文件是否为伪装压缩包')
+        self.verify_media_checkbox = QCheckBox('验证图片和视频文件是否为伪装压缩包（同时启用密码库测试）')
         self.verify_media_checkbox.setToolTip(
-            '开启时：会检测图片/视频文件是否为伪装的压缩包，只处理真正的压缩包\n'
-            '关闭时：将所有图片/视频文件都当作伪装压缩包处理（适用于加密压缩包）'
+            '开启时：会检测图片/视频文件是否为伪装的压缩包，并使用密码库测试加密文件\n'
+            '关闭时：将所有图片/视频文件都当作伪装压缩包处理，不使用密码库测试（速度更快）'
         )
         layout.addRow('', self.verify_media_checkbox)
-        
-        # 密码测试开关
-        self.test_passwords_checkbox = QCheckBox('7z测试时尝试使用密码库')
-        self.test_passwords_checkbox.setToolTip(
-            '开启时：7z测试文件时会尝试使用密码库中的密码，可以识别加密的伪装压缩包\n'
-            '关闭时：7z测试时不使用密码，只能识别无密码的伪装压缩包（速度更快）'
-        )
-        layout.addRow('', self.test_passwords_checkbox)
         
         # 7z路径
         seven_zip_layout = QHBoxLayout()
@@ -342,7 +334,6 @@ class ConfigDialog(QDialog):
         self.image_suffix_edit.setText(self.config.image_archive_suffix)
         self.seven_zip_path_edit.setText(self.config.seven_zip_path)
         self.verify_media_checkbox.setChecked(self.config.verify_media_files)
-        self.test_passwords_checkbox.setChecked(self.config.test_with_passwords)
     
     def _browse_target_folder(self) -> None:
         """浏览选择目标文件夹"""
@@ -509,6 +500,5 @@ class ConfigDialog(QDialog):
             passwords=passwords,
             image_archive_suffix=self.image_suffix_edit.text().strip(),
             seven_zip_path=self.seven_zip_path_edit.text().strip(),
-            verify_media_files=self.verify_media_checkbox.isChecked(),
-            test_with_passwords=self.test_passwords_checkbox.isChecked()
+            verify_media_files=self.verify_media_checkbox.isChecked()
         )

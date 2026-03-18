@@ -682,12 +682,25 @@ class MainWindow(QMainWindow):
     
     def start_monitoring(self) -> None:
         """启动文件监控"""
-        # 检查配置是否有效
-        if not self.config.target_folder or not self.config.unpack_folder:
+        # 重新加载配置文件以获取最新配置
+        try:
+            self.config = self.config_manager.load()
+            print(f"重新加载配置: target_folder={self.config.target_folder}, unpack_folder={self.config.unpack_folder}")
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                '配置错误',
+                f'加载配置文件失败: {e}'
+            )
+            return
+        
+        # 验证配置
+        is_valid, error_msg = self.config_manager.validate(self.config)
+        if not is_valid:
             QMessageBox.warning(
                 self,
                 '配置错误',
-                '请先配置目标文件夹和Unpack文件夹。'
+                f'配置文件无效: {error_msg}\n\n请先配置正确的参数。'
             )
             return
         
@@ -700,21 +713,17 @@ class MainWindow(QMainWindow):
             )
             return
         
+        # 重新初始化业务组件以应用新配置
+        self._reinit_business_components()
+        
         # 检查FileMonitor是否已初始化
         if not self.file_monitor:
-            # 重新初始化目标文件夹监控器
-            if self.file_processor:
-                self.file_monitor = FileMonitor(
-                    self.config.target_folder,
-                    self._on_new_file_in_target_folder
-                )
-            else:
-                QMessageBox.warning(
-                    self,
-                    '错误',
-                    '文件处理器未初始化，无法启动监控。'
-                )
-                return
+            QMessageBox.warning(
+                self,
+                '错误',
+                '文件监控器初始化失败，无法启动监控。'
+            )
+            return
         
         # 检查解压文件夹监控器是否已初始化
         # 不再监控解压文件夹，避免递归触发和文件访问冲突
@@ -1058,14 +1067,8 @@ class MainWindow(QMainWindow):
         else:
             self.file_monitor = None
         
-        # 重新初始化解压文件夹监控器
-        if self.config.unpack_folder and self.file_processor:
-            self.unpack_monitor = FileMonitor(
-                self.config.unpack_folder,
-                self._on_new_file_in_unpack_folder
-            )
-        else:
-            self.unpack_monitor = None
+        # 不再重新初始化解压文件夹监控器（已移除）
+        self.unpack_monitor = None
         
         # 重新初始化FileChecker
         if self.config.unpack_folder:

@@ -59,8 +59,7 @@ class ConfigManager:
                 passwords=data.get('passwords', []),
                 image_archive_suffix=data.get('image_archive_suffix', '.zip'),
                 seven_zip_path=data.get('seven_zip_path', '7z'),
-                verify_media_files=data.get('verify_media_files', True),
-                test_with_passwords=data.get('test_with_passwords', False)
+                verify_media_files=data.get('verify_media_files', False)
             )
             
             return config
@@ -96,8 +95,7 @@ class ConfigManager:
             'passwords': config.passwords,
             'image_archive_suffix': config.image_archive_suffix,
             'seven_zip_path': config.seven_zip_path,
-            'verify_media_files': config.verify_media_files,
-            'test_with_passwords': config.test_with_passwords
+            'verify_media_files': config.verify_media_files
         }
         
         with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -161,6 +159,5 @@ class ConfigManager:
             passwords=['password123', '12345678', 'admin'],
             image_archive_suffix='.zip',
             seven_zip_path='7z',
-            verify_media_files=False,
-            test_with_passwords=False
+            verify_media_files=False
         )
