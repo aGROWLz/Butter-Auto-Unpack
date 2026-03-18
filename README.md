@@ -32,6 +32,9 @@ Butter Auto Unpack 是一个智能的文件自动解压工具，用于监控指�
 - 🎨 **GUI界面** - 友好的图形界面，方便管理和筛选
 - 📊 **状态跟踪** - 完整的文件处理状态跟踪
 - 📝 **日志系统** - 详细记录所有操作和错误信息
+- 🛠️ **双解压引擎** - 支持 7-Zip 和 Bandizip 两种解压工具
+- 🔎 **智能格式识别** - 自动检测文件真实格式，不受扩展名影响
+- ▶️ **手动解压** - 支持手动触发解压操作
 
 ### 🚀 快速开始
 
@@ -89,7 +92,8 @@ python main.py
 | `unpack_folder` | 解压输出文件夹路径 |
 | `passwords` | 解压密码列表 |
 | `image_archive_suffix` | 图片打包后缀 |
-| `seven_zip_path` | 7z工具路径 |
+| `preferred_extractor` | 首选解压工具（`bandizip` 或 `7z`） |
+| `seven_zip_path` | 7z工具路径（可选） |
 
 ### 💻 命令行参数
 
@@ -149,7 +153,7 @@ pyinstaller Butter-Auto-Unpack.spec
 
 - **GUI框架**: PyQt5
 - **文件监控**: watchdog
-- **解压工具**: 7-Zip
+- **解压工具**: 7-Zip / Bandizip
 - **数据库**: SQLite3
 - **打包工具**: PyInstaller
 
@@ -212,6 +216,7 @@ pyinstaller Butter-Auto-Unpack.spec
 ### 🙏 致谢
 
 - [7-Zip](https://www.7-zip.org/) - 强大的压缩工具
+- [Bandizip](https://www.bandisoft.com/bandizip/) - 优秀的压缩工具，支持更多格式
 - [PyQt5](https://www.riverbankcomputing.com/software/pyqt/) - 优秀的GUI框架
 - [watchdog](https://github.com/gorakhargosh/watchdog) - 文件系统监控库
 
@@ -235,6 +240,9 @@ Butter Auto Unpack is an intelligent automatic file extraction tool that monitor
 - 🎨 **GUI Interface** - User-friendly graphical interface
 - 📊 **Status Tracking** - Complete file processing status tracking
 - 📝 **Logging System** - Detailed logging of all operations and errors
+- 🛠️ **Dual Extraction Engine** - Supports both 7-Zip and Bandizip
+- 🔎 **Smart Format Detection** - Auto-detects real file format regardless of extension
+- ▶️ **Manual Extraction** - Support manual trigger for extraction
 
 ### 🚀 Quick Start
 
