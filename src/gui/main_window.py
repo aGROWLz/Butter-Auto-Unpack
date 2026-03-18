@@ -263,8 +263,9 @@ class MainWindow(QMainWindow):
         if worker in self.processing_workers:
             self.processing_workers.remove(worker)
         
-        # 刷新文件列表
-        self.refresh_records()
+        # 检查文件状态并刷新文件列表
+        self._check_and_update_file_status()
+        self.load_records()
         
         # 处理队列中的下一个文件
         if self.processing_queue:
@@ -317,9 +318,10 @@ class MainWindow(QMainWindow):
         """
         print(message)  # 在主线程中安全地打印消息
         
-        # 如果是递归处理相关的成功消息，刷新文件列表
+        # 如果是递归处理相关的成功消息，检查状态并刷新文件列表
         if any(keyword in message for keyword in ["成功解压嵌套压缩包", "成功解压单图片文件"]):
-            self.refresh_records()
+            self._check_and_update_file_status()
+            self.load_records()
     
     def init_ui(self) -> None:
         """初始化UI组件"""
@@ -824,12 +826,34 @@ class MainWindow(QMainWindow):
     
     def refresh_records(self) -> None:
         """刷新文件记录显示"""
+        # 先检查文件状态并更新数据库
+        self._check_and_update_file_status()
+        
         # 重新加载记录
         self.load_records()
         
         # 更新筛选控件的统计信息
         if self.filter_widget and self.db:
             self._update_filter_counts()
+    
+    def _check_and_update_file_status(self) -> None:
+        """检查并更新文件状态"""
+        if not self.file_checker:
+            return
+        
+        try:
+            # 检查所有文件并获取已删除的文件ID列表
+            deleted_ids = self.file_checker.check_all_files()
+            
+            if deleted_ids:
+                print(f"检测到 {len(deleted_ids)} 个文件已被手动删除，已更新状态")
+                
+                # 显示状态消息
+                self._show_status_message(f"检测到 {len(deleted_ids)} 个文件已被手动删除")
+            
+        except Exception as e:
+            print(f"检查文件状态时出错: {e}")
+            self._show_status_message(f"检查文件状态时出错: {e}")
     
     def _update_filter_counts(self) -> None:
         """更新筛选控件的状态计数"""
@@ -915,7 +939,7 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             '确认删除',
-            '确定要删除该文件吗？\n\n这将删除压缩包文件和解压文件夹。',
+            '确定要删除该压缩包吗？\n\n这将只删除压缩包文件，解压文件夹将被保留。',
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
