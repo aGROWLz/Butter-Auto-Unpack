@@ -48,6 +48,7 @@ test_output/
 *.swo
 *~
 .vs/
+.kiro/
 
 # Application specific
 config.json
