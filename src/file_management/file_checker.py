@@ -68,11 +68,8 @@ class FileChecker:
             if record.status == 'deleted':
                 continue
             
-            # 跳过递归解压的文件检查（这些文件的路径可能在子文件夹中）
-            if self._is_recursive_extracted_file(record):
-                continue
-            
-            # 检查文件是否存在
+            # 检查所有文件，不再跳过递归解压的文件
+            # 因为我们需要检查所有压缩包是否被手动删除
             if not self.check_file(record.id):
                 self.mark_as_deleted(record.id)
                 deleted_ids.append(record.id)
@@ -107,29 +104,38 @@ class FileChecker:
             record_id: 记录ID
             
         Returns:
-            文件是否存在
+            压缩包文件是否存在（不考虑解压文件夹）
         """
         record = self.db.get_record_by_id(record_id)
         if not record:
             return False
         
-        # 构建文件在Unpack文件夹中的完整路径
-        file_path = Path(self.unpack_folder) / record.filename
+        # 只检查压缩包文件是否存在，不考虑解压文件夹
+        # 因为我们关心的是压缩包是否被手动删除
+        archive_path = Path(record.original_path)
+        archive_exists = archive_path.exists()
         
-        # 检查文件是否存在
-        exists = file_path.exists()
+        return archive_exists
+    
+    def _check_extracted_folder_exists(self, record) -> bool:
+        """检查解压文件夹是否存在
         
-        # 如果文件不存在，还要检查是否有对应的解压文件夹
-        if not exists:
-            # 检查解压文件夹是否存在（去掉扩展名）
-            folder_name = os.path.splitext(record.filename)[0]
-            folder_path = Path(self.unpack_folder) / folder_name
+        Args:
+            record: 文件记录
             
-            # 如果解压文件夹也不存在，则认为文件已被删除
-            if not folder_path.exists():
-                return False
+        Returns:
+            解压文件夹是否存在
+        """
+        # 根据原始路径推断解压文件夹位置
+        original_path = Path(record.original_path)
         
-        return exists
+        # 获取不带扩展名的文件名作为文件夹名
+        folder_name = original_path.stem
+        
+        # 解压文件夹应该在原始路径的同级目录
+        folder_path = original_path.parent / folder_name
+        
+        return folder_path.exists() and folder_path.is_dir()
     
     def mark_as_deleted(self, record_id: int) -> None:
         """标记文件为已删除状态
@@ -137,4 +143,4 @@ class FileChecker:
         Args:
             record_id: 记录ID
         """
-        self.db.update_status(record_id, 'deleted', '文件已被手动删除')
+        self.db.update_status(record_id, 'deleted', '压缩包已被手动删除')
