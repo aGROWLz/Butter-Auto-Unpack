@@ -16,9 +16,9 @@ block_cipher = None
 # 定义要打包的数据文件
 # 格式: (源路径, 目标目录)
 datas = [
-    # 7z工具文件 - 必需的解压工具
-    ('resources/7za.exe', 'resources'),
-    ('resources/7za.dll', 'resources'),
+    # 7z工具文件 - 必需的解压工具（完整版支持RAR）
+    ('resources/7z.exe', 'resources'),
+    ('resources/7z.dll', 'resources'),
     
     # 配置文件模板
     ('config.template.json', '.'),
