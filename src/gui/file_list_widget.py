@@ -32,6 +32,7 @@ class FileListWidget(QTableWidget):
     # 定义信号
     delete_file_clicked = pyqtSignal(int)
     delete_record_clicked = pyqtSignal(int)
+    open_folder_clicked = pyqtSignal(int)  # 打开文件夹按钮点击信号
     batch_delete_files_clicked = pyqtSignal(list)
     batch_delete_records_clicked = pyqtSignal(list)
     
@@ -39,9 +40,10 @@ class FileListWidget(QTableWidget):
     COL_CHECKBOX = 0
     COL_FILENAME = 1
     COL_ORIGINAL_PATH = 2
-    COL_MOVED_TIME = 3
-    COL_STATUS = 4
-    COL_ACTIONS = 5
+    COL_UNPACK_PATH = 3  # 解压文件夹路径
+    COL_MOVED_TIME = 4
+    COL_STATUS = 5
+    COL_ACTIONS = 6
     
     def __init__(self, parent=None):
         """初始化文件列表控件
@@ -65,13 +67,14 @@ class FileListWidget(QTableWidget):
     def _init_table(self) -> None:
         """初始化表格结构"""
         # 设置列数
-        self.setColumnCount(6)
+        self.setColumnCount(7)
         
         # 设置表头
         self.setHorizontalHeaderLabels([
             '选择',
             '文件名',
             '原始路径',
+            '解压文件夹',
             '移动时间',
             '状态',
             '操作'
@@ -87,15 +90,17 @@ class FileListWidget(QTableWidget):
         header = self.horizontalHeader()
         header.setSectionResizeMode(self.COL_CHECKBOX, QHeaderView.Fixed)
         header.setSectionResizeMode(self.COL_FILENAME, QHeaderView.Interactive)
-        header.setSectionResizeMode(self.COL_ORIGINAL_PATH, QHeaderView.Stretch)
+        header.setSectionResizeMode(self.COL_ORIGINAL_PATH, QHeaderView.Interactive)
+        header.setSectionResizeMode(self.COL_UNPACK_PATH, QHeaderView.Stretch)
         header.setSectionResizeMode(self.COL_MOVED_TIME, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COL_STATUS, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(self.COL_ACTIONS, QHeaderView.Fixed)
         
         # 设置默认列宽
-        self.setColumnWidth(self.COL_CHECKBOX, 60)
-        self.setColumnWidth(self.COL_FILENAME, 200)
-        self.setColumnWidth(self.COL_ACTIONS, 220)  # 为两个按钮预留足够空间
+        self.setColumnWidth(self.COL_CHECKBOX, 40)
+        self.setColumnWidth(self.COL_FILENAME, 180)
+        self.setColumnWidth(self.COL_ORIGINAL_PATH, 200)
+        self.setColumnWidth(self.COL_ACTIONS, 260)  # 为三个按钮预留足够空间
         
         # 启用排序
         self.setSortingEnabled(True)
@@ -143,34 +148,45 @@ class FileListWidget(QTableWidget):
         # 存储记录ID映射
         self._record_id_map[row] = record.id
         
+        # 设置行高，确保复选框有足够空间
+        self.setRowHeight(row, 40)
+        
         # 复选框
         checkbox_widget = QWidget()
+        checkbox_widget.setStyleSheet("background-color: transparent;")
         checkbox_layout = QHBoxLayout(checkbox_widget)
-        checkbox_layout.setContentsMargins(0, 0, 0, 0)
+        checkbox_layout.setContentsMargins(0, 0, 0, 0)  # 无边距
+        checkbox_layout.setSpacing(0)
         checkbox_layout.setAlignment(Qt.AlignCenter)
         
         checkbox = QCheckBox()
+        checkbox.setMinimumSize(22, 22)  # 减小最小尺寸
         checkbox.setStyleSheet("""
             QCheckBox {
-                spacing: 5px;
+                spacing: 0px;
+                background-color: transparent;
+                min-width: 22px;
+                min-height: 22px;
+                max-width: 22px;
+                max-height: 22px;
             }
             QCheckBox::indicator {
                 width: 18px;
                 height: 18px;
-                border: 2px solid #666666;
+                border: 2px solid #aaaaaa;
                 border-radius: 3px;
-                background-color: #3c3c3c;
+                background-color: #2d2d2d;
             }
             QCheckBox::indicator:unchecked {
-                border: 2px solid #666666;
-                background-color: #3c3c3c;
+                border: 2px solid #aaaaaa;
+                background-color: #2d2d2d;
                 border-radius: 3px;
             }
             QCheckBox::indicator:checked {
                 border: 2px solid #4CAF50;
                 background-color: #4CAF50;
                 border-radius: 3px;
-                image: none;
+                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iMjAgNiA5IDE3IDQgMTIiPjwvcG9seWxpbmU+PC9zdmc+);
             }
             QCheckBox::indicator:hover {
                 border-color: #4CAF50;
@@ -194,6 +210,13 @@ class FileListWidget(QTableWidget):
         path_item = QTableWidgetItem(record.original_path)
         path_item.setToolTip(record.original_path)  # 设置工具提示显示完整路径
         self.setItem(row, self.COL_ORIGINAL_PATH, path_item)
+        
+        # 解压文件夹路径（从原始路径提取）
+        import os
+        unpack_path = os.path.dirname(record.original_path)
+        unpack_path_item = QTableWidgetItem(unpack_path)
+        unpack_path_item.setToolTip(unpack_path)
+        self.setItem(row, self.COL_UNPACK_PATH, unpack_path_item)
         
         # 移动时间
         time_str = self._format_datetime(record.moved_time)
@@ -324,7 +347,7 @@ class FileListWidget(QTableWidget):
         return None
     
     def _create_action_buttons(self, record_id: int) -> QWidget:
-        """创建操作按钮（删除文件、删除记录）
+        """创建操作按钮（打开文件夹、删除文件、删除记录）
         
         Args:
             record_id: 记录ID
@@ -337,13 +360,42 @@ class FileListWidget(QTableWidget):
         widget.setStyleSheet("background-color: transparent;")
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(10, 2, 10, 2)  # 减少上下边距
-        layout.setSpacing(10)
+        layout.setSpacing(8)
         layout.setAlignment(Qt.AlignVCenter)  # 垂直居中对齐
         
-        # 删除文件按钮 - 简化文字
+        # 打开文件夹按钮
+        open_folder_btn = QPushButton('📂 打开')
+        open_folder_btn.setMinimumSize(70, 30)
+        open_folder_btn.setMaximumSize(70, 30)
+        open_folder_btn.setToolTip('打开解压文件夹')
+        open_folder_btn.setCursor(Qt.PointingHandCursor)
+        open_folder_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #17a2b8;
+                border: none;
+                color: white;
+                font-size: 12px;
+                font-weight: bold;
+                border-radius: 4px;
+                margin: 0px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: #138496;
+            }
+            QPushButton:pressed {
+                background-color: #117a8b;
+            }
+        """)
+        open_folder_btn.clicked.connect(
+            lambda: self.open_folder_clicked.emit(record_id)
+        )
+        layout.addWidget(open_folder_btn)
+        
+        # 删除文件按钮
         delete_file_btn = QPushButton('删除文件')
-        delete_file_btn.setMinimumSize(90, 30)  # 稍微减少高度
-        delete_file_btn.setMaximumSize(90, 30)
+        delete_file_btn.setMinimumSize(80, 30)
+        delete_file_btn.setMaximumSize(80, 30)
         delete_file_btn.setToolTip('删除压缩包文件和解压文件夹')
         delete_file_btn.setCursor(Qt.PointingHandCursor)
         delete_file_btn.setStyleSheet("""
@@ -369,10 +421,10 @@ class FileListWidget(QTableWidget):
         )
         layout.addWidget(delete_file_btn)
         
-        # 删除记录按钮 - 简化文字
+        # 删除记录按钮
         delete_record_btn = QPushButton('删除记录')
-        delete_record_btn.setMinimumSize(90, 30)  # 稍微减少高度
-        delete_record_btn.setMaximumSize(90, 30)
+        delete_record_btn.setMinimumSize(80, 30)
+        delete_record_btn.setMaximumSize(80, 30)
         delete_record_btn.setToolTip('仅删除数据库记录，保留文件')
         delete_record_btn.setCursor(Qt.PointingHandCursor)
         delete_record_btn.setStyleSheet("""
