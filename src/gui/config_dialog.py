@@ -160,6 +160,7 @@ class ConfigDialog(QDialog):
             QCheckBox::indicator:checked {
                 background-color: #4CAF50;
                 border-color: #4CAF50;
+                image: none;
             }
             
             QCheckBox::indicator:hover {
@@ -168,6 +169,7 @@ class ConfigDialog(QDialog):
             
             QCheckBox::indicator:checked:hover {
                 background-color: #45a049;
+                border-color: #45a049;
             }
         """)
         
