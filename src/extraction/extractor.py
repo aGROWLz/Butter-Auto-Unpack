@@ -47,10 +47,10 @@ class Extractor:
         self.logger.info(f"解压引擎初始化 - 7z路径: {self.seven_zip_path}")
     
     def get_bundled_7z_path(self) -> str:
-        """获取打包的7za.exe路径
+        """获取打包的7z.exe路径
         
         Returns:
-            7za.exe的完整路径
+            7z.exe的完整路径（完整版，支持RAR格式）
         """
         if getattr(sys, 'frozen', False):
             # 打包后的exe环境
@@ -59,6 +59,12 @@ class Extractor:
             # 开发环境
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         
+        # 优先使用完整版7z.exe（支持RAR格式），如果不存在则回退到7za.exe
+        seven_z_path = os.path.join(base_path, 'resources', '7z.exe')
+        if os.path.exists(seven_z_path):
+            return seven_z_path
+        
+        # 回退到精简版7za.exe
         return os.path.join(base_path, 'resources', '7za.exe')
     
     def check_7z_available(self) -> bool:
@@ -93,9 +99,9 @@ class Extractor:
         
         try:
             # 首先尝试无密码测试（使用空密码参数避免等待输入）
-            cmd = [self.seven_zip_path, 't', archive_path, '-p', '-y']
+            cmd = [self.seven_zip_path, 't', '-t*', archive_path, '-p', '-y']
             
-            self.logger.info(f"执行无密码测试: {' '.join(cmd[:3])} -p -y")
+            self.logger.info(f"执行无密码测试: {' '.join(cmd[:3])} -t* -p -y")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -126,7 +132,7 @@ class Extractor:
                 
                 for i, password in enumerate(passwords, 1):
                     self.logger.info(f"尝试密码 {i}/{len(passwords)}: {'*' * len(password)}")
-                    cmd_with_password = [self.seven_zip_path, 't', archive_path, f'-p{password}', '-y']
+                    cmd_with_password = [self.seven_zip_path, 't', '-t*', archive_path, f'-p{password}', '-y']
                     
                     result = subprocess.run(
                         cmd_with_password,
@@ -269,6 +275,7 @@ class Extractor:
         cmd = [
             self.seven_zip_path,
             'x',  # 解压命令
+            '-t*',  # 自动检测压缩格式，不依赖文件扩展名
             archive_path,
             f'-o{output_dir}',  # 输出目录
             '-y'  # 自动确认所有提示
@@ -277,10 +284,10 @@ class Extractor:
         # 总是添加密码参数，即使是空密码，避免7z等待输入
         if password:
             cmd.append(f'-p{password}')
-            self.logger.info(f"准备执行7z命令（使用密码）: {' '.join(cmd[:4])} -p*** -y")
+            self.logger.info(f"准备执行7z命令（使用密码）: {' '.join(cmd[:5])} -p*** -y")
         else:
             cmd.append('-p')  # 空密码
-            self.logger.info(f"准备执行7z命令（空密码）: {' '.join(cmd[:4])} -p -y")
+            self.logger.info(f"准备执行7z命令（空密码）: {' '.join(cmd[:5])} -p -y")
         
         self.logger.info(f"creationflags: {subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0}")
         

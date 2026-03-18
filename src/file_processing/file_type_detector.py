@@ -132,8 +132,13 @@ class FileTypeDetector:
             return True
         
         # 检查伪装非起始卷 (.002.xxx, .003.xxx, ...)
-        if re.search(r'\.00[2-9]\.[^.]+$', file_lower) or re.search(r'\.0[1-9][0-9]\.[^.]+$', file_lower):
-            return True
+        # 排除常见的非压缩文件扩展名
+        excluded_extensions = {'.dll', '.exe', '.sys', '.drv'}
+        match = re.search(r'\.00[2-9]\.(\w+)$', file_lower) or re.search(r'\.0[1-9][0-9]\.(\w+)$', file_lower)
+        if match:
+            ext = '.' + match.group(1)
+            if ext not in excluded_extensions:
+                return True
         
         return False
     
@@ -151,8 +156,17 @@ class FileTypeDetector:
         file_lower = file_path.lower()
         
         # 检查伪装分卷 (.001.xxx) - 优先检查，因为它可能包含.001
+        # 排除常见的非压缩文件扩展名
+        excluded_extensions = {'.dll', '.exe', '.sys', '.drv'}
         if re.search(r'\.001\.[^.]+$', file_lower):
-            return 'disguised'
+            # 获取伪装后的扩展名
+            match = re.search(r'\.001\.(\w+)$', file_lower)
+            if match:
+                ext = '.' + match.group(1)
+                if ext not in excluded_extensions:
+                    return 'disguised'
+            else:
+                return 'disguised'
         
         # 检查zip编号分卷 (.zip.001)
         if re.search(r'\.zip\.001$', file_lower):

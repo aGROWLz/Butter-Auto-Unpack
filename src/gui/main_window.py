@@ -676,6 +676,7 @@ class MainWindow(QMainWindow):
         # 连接信号
         self.file_list_widget.delete_file_clicked.connect(self.on_delete_file_clicked)
         self.file_list_widget.delete_record_clicked.connect(self.on_delete_record_clicked)
+        self.file_list_widget.open_folder_clicked.connect(self.on_open_folder_clicked)
         self.file_list_widget.batch_delete_files_clicked.connect(self.on_batch_delete_files_clicked)
         self.file_list_widget.batch_delete_records_clicked.connect(self.on_batch_delete_records_clicked)
         main_layout.addWidget(self.file_list_widget, 1)  # 占据剩余空间
@@ -933,6 +934,44 @@ class MainWindow(QMainWindow):
             print(f"筛选记录失败: {e}")
             QMessageBox.warning(self, '错误', f'筛选记录失败: {e}')
     
+    def on_open_folder_clicked(self, record_id: int) -> None:
+        """处理打开文件夹按钮点击
+        
+        Args:
+            record_id: 记录ID
+        """
+        # 从数据库获取记录
+        record = self.db.get_record_by_id(record_id)
+        if not record:
+            QMessageBox.warning(self, '错误', '找不到该记录')
+            return
+        
+        # 获取解压文件夹路径
+        import os
+        folder_path = os.path.dirname(record.original_path)
+        
+        if not os.path.exists(folder_path):
+            QMessageBox.warning(self, '错误', f'文件夹不存在: {folder_path}')
+            return
+        
+        try:
+            # 使用系统默认方式打开文件夹
+            import subprocess
+            if os.name == 'nt':  # Windows
+                # Windows explorer 需要反斜杠路径
+                windows_path = folder_path.replace('/', '\\')
+                # explorer 命令有时会返回非零退出码，但实际已成功打开
+                # 使用 check=False 忽略退出码检查
+                subprocess.run(['explorer', windows_path], check=False)
+            elif os.name == 'darwin':  # macOS
+                subprocess.run(['open', folder_path], check=True)
+            else:  # Linux
+                subprocess.run(['xdg-open', folder_path], check=True)
+            
+            self.status_message_signal.emit(f'已打开文件夹: {folder_path}')
+        except Exception as e:
+            QMessageBox.critical(self, '错误', f'无法打开文件夹: {e}')
+    
     def on_delete_file_clicked(self, record_id: int) -> None:
         """处理删除文件按钮点击
         
@@ -977,27 +1016,92 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, '错误', '文件删除器未初始化')
             return
         
-        # TODO: 显示确认对话框（任务14中实现）
-        # 临时使用标准确认对话框
-        reply = QMessageBox.question(
-            self,
-            '确认删除',
-            '确定要删除该记录吗？\n\n可以选择是否同时删除文件。',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        # 创建自定义对话框
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QCheckBox, QHBoxLayout, QPushButton
         
-        if reply == QMessageBox.Yes:
-            # 询问是否同时删除文件
-            delete_file_reply = QMessageBox.question(
-                self,
-                '删除文件',
-                '是否同时删除文件？',
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            also_delete_file = (delete_file_reply == QMessageBox.Yes)
+        dialog = QDialog(self)
+        dialog.setWindowTitle('确认删除 - Butter自动解压')
+        dialog.setMinimumWidth(350)
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+                font-size: 14px;
+                padding: 10px;
+            }
+            QCheckBox {
+                color: #ffffff;
+                font-size: 13px;
+                padding: 5px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #666666;
+                border-radius: 3px;
+                background-color: #3c3c3c;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #4CAF50;
+                border-color: #4CAF50;
+            }
+            QPushButton {
+                background-color: #4CAF50;
+                border: none;
+                color: white;
+                padding: 8px 20px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 4px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton#cancelButton {
+                background-color: #6c757d;
+            }
+            QPushButton#cancelButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 提示文字
+        label = QLabel('确定要删除该记录吗？')
+        layout.addWidget(label)
+        
+        # 复选框
+        checkbox = QCheckBox('同时删除文件（压缩包和解压文件夹）')
+        checkbox.setChecked(False)
+        layout.addWidget(checkbox)
+        
+        # 按钮布局
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        
+        yes_button = QPushButton('Yes')
+        yes_button.clicked.connect(dialog.accept)
+        button_layout.addWidget(yes_button)
+        
+        no_button = QPushButton('No')
+        no_button.setObjectName('cancelButton')
+        no_button.clicked.connect(dialog.reject)
+        button_layout.addWidget(no_button)
+        
+        layout.addLayout(button_layout)
+        
+        # 显示对话框
+        result = dialog.exec_()
+        
+        if result == QDialog.Accepted:
+            also_delete_file = checkbox.isChecked()
             
             try:
                 success, message = self.file_deleter.delete_record(
