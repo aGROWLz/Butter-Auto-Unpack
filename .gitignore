@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+test_output/
+*_output/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vs/
+
+# Application specific
+config.json
+*.db
+*.sqlite
+*.sqlite3
+logs/*.log
+!logs/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.old
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
+file_records.db
+7z2600-extra/
+
+# Documentation and tests (not tracked)
+docs/
+tests/
+tools/
+logs/
+release/
+
+# Test files (keep test structure but ignore outputs)
+tests/output/
+tests/temp/
+tests/**/*.pyc
+tests/**/__pycache__/
+
+# Git function ���ߣ��Զ����ӣ�
+git_function/
