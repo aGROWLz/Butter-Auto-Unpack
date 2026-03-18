@@ -141,6 +141,7 @@ class FileProcessor:
                 
                 # 根据配置决定是否验证
                 if self.config.verify_media_files:
+                    self.logger.info(f"开始验证图片文件是否为伪装压缩包: {file_path}")
                     # 验证是否真的是压缩包
                     if self._is_disguised_archive(file_path):
                         self.logger.info(f"确认为伪装压缩包，开始处理: {file_path}")
@@ -268,16 +269,20 @@ class FileProcessor:
         try:
             # 根据配置决定是否使用密码测试
             passwords = None
-            if self.config.test_with_passwords and self.config.passwords:
+            if self.config.verify_media_files and self.config.passwords:
                 passwords = self.config.passwords
-                self.logger.debug(f"使用密码库测试文件: {file_path}")
+                self.logger.info(f"使用密码库测试文件: {file_path}, 密码数量: {len(passwords)}")
             else:
-                self.logger.debug(f"不使用密码测试文件: {file_path}")
+                self.logger.info(f"不使用密码测试文件: {file_path}")
             
             # 使用7z工具测试文件是否为有效的压缩包
+            self.logger.info(f"调用7z测试文件: {file_path}")
             result = self.extractor.test_archive(file_path, passwords)
+            self.logger.info(f"7z测试结果: success={result.success}, error_type={result.error_type}")
             return result.success
         except Exception as e:
+            self.logger.error(f"测试文件是否为压缩包时出错: {file_path}, 错误: {e}", exc_info=True)
+            return False
             self.logger.debug(f"测试文件是否为压缩包时出错: {file_path}, 错误: {e}")
             return False
 

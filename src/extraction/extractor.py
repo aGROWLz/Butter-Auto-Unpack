@@ -89,12 +89,13 @@ class Extractor:
         Returns:
             ExtractionResult: 测试结果
         """
-        self.logger.debug(f"测试文件是否为压缩包: {archive_path}")
+        self.logger.info(f"测试文件是否为压缩包: {archive_path}")
         
         try:
-            # 首先尝试无密码测试
-            cmd = [self.seven_zip_path, 't', archive_path, '-y']
+            # 首先尝试无密码测试（使用空密码参数避免等待输入）
+            cmd = [self.seven_zip_path, 't', archive_path, '-p', '-y']
             
+            self.logger.info(f"执行无密码测试: {' '.join(cmd[:3])} -p -y")
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -103,19 +104,28 @@ class Extractor:
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             
+            # 记录 7z 输出
+            if result.stdout:
+                self.logger.info(f"7z stdout:\n{result.stdout}")
+            if result.stderr:
+                self.logger.info(f"7z stderr:\n{result.stderr}")
+            
             if result.returncode == 0:
-                self.logger.debug(f"文件测试成功（无密码），确认为压缩包: {archive_path}")
+                self.logger.info(f"文件测试成功（无密码），确认为压缩包: {archive_path}")
                 return ExtractionResult(
                     success=True,
                     error_type='none',
                     error_message=''
                 )
             
+            self.logger.info(f"无密码测试失败，返回码: {result.returncode}")
+            
             # 如果无密码测试失败，且提供了密码列表，则尝试使用密码
             if passwords and len(passwords) > 0:
-                self.logger.debug(f"无密码测试失败，尝试使用密码测试: {archive_path}")
+                self.logger.info(f"开始尝试密码列表，共 {len(passwords)} 个密码")
                 
-                for password in passwords:
+                for i, password in enumerate(passwords, 1):
+                    self.logger.info(f"尝试密码 {i}/{len(passwords)}: {'*' * len(password)}")
                     cmd_with_password = [self.seven_zip_path, 't', archive_path, f'-p{password}', '-y']
                     
                     result = subprocess.run(
@@ -126,17 +136,25 @@ class Extractor:
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
                     )
                     
+                    # 记录 7z 输出
+                    if result.stdout:
+                        self.logger.info(f"7z stdout (密码 {i}):\n{result.stdout}")
+                    if result.stderr:
+                        self.logger.info(f"7z stderr (密码 {i}):\n{result.stderr}")
+                    
                     if result.returncode == 0:
-                        self.logger.debug(f"文件测试成功（密码: {password}），确认为压缩包: {archive_path}")
+                        self.logger.info(f"文件测试成功（密码: {'*' * len(password)}），确认为压缩包: {archive_path}")
                         return ExtractionResult(
                             success=True,
                             error_type='none',
                             error_message=''
                         )
+                    else:
+                        self.logger.info(f"密码 {i} 失败，返回码: {result.returncode}")
                 
-                self.logger.debug(f"所有密码测试失败，可能不是压缩包或密码错误: {archive_path}")
+                self.logger.info(f"所有密码测试失败: {archive_path}")
             else:
-                self.logger.debug(f"文件测试失败，不是有效压缩包: {archive_path}")
+                self.logger.info(f"未提供密码列表，测试结束")
             
             return ExtractionResult(
                 success=False,
@@ -145,12 +163,14 @@ class Extractor:
             )
         
         except subprocess.TimeoutExpired:
+            self.logger.error(f"测试超时: {archive_path}")
             return ExtractionResult(
                 success=False,
                 error_type='timeout',
                 error_message='测试超时'
             )
         except Exception as e:
+            self.logger.error(f"测试异常: {archive_path}, 错误: {e}", exc_info=True)
             return ExtractionResult(
                 success=False,
                 error_type='other',
@@ -257,14 +277,15 @@ class Extractor:
         # 总是添加密码参数，即使是空密码，避免7z等待输入
         if password:
             cmd.append(f'-p{password}')
+            self.logger.info(f"准备执行7z命令（使用密码）: {' '.join(cmd[:4])} -p*** -y")
         else:
             cmd.append('-p')  # 空密码
+            self.logger.info(f"准备执行7z命令（空密码）: {' '.join(cmd[:4])} -p -y")
+        
+        self.logger.info(f"creationflags: {subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0}")
         
         process = None
         try:
-            self.logger.info(f"准备执行7z命令: {' '.join(cmd[:4])} -p*** -y")  # 不记录密码
-            self.logger.info(f"creationflags: {subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0}")
-            
             # 使用 Popen 以便更好地控制进程
             process = subprocess.Popen(
                 cmd,
@@ -275,9 +296,12 @@ class Extractor:
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
             
+            self.logger.info(f"7z进程已启动，PID: {process.pid}")
+            
             # 关闭 stdin，确保不会等待输入
             if process.stdin:
                 process.stdin.close()
+                self.logger.info("stdin 已关闭")
             
             # 等待进程完成，设置超时
             try:
@@ -285,6 +309,12 @@ class Extractor:
                 returncode = process.returncode
                 
                 self.logger.info(f"7z命令执行完成，返回码: {returncode}")
+                
+                # 记录 7z 输出
+                if stdout:
+                    self.logger.info(f"7z stdout:\n{stdout}")
+                if stderr:
+                    self.logger.info(f"7z stderr:\n{stderr}")
                 
                 # 7z返回0表示成功
                 if returncode == 0:
