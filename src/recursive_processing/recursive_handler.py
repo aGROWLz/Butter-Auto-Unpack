@@ -77,6 +77,11 @@ class RecursiveHandler:
         # 检查文件夹内容类型
         content_analysis = self._analyze_folder_content(folder_path)
         
+        # 如果检测到多个文件且包含exe，停止递归处理
+        if content_analysis['should_stop_recursion']:
+            self._send_status(f"文件夹包含exe且文件数量大于1，停止递归处理: {folder_path}")
+            return
+        
         # 处理子文件夹（递归进入子文件夹继续检索）
         for subfolder in content_analysis['subfolders']:
             self._send_status(f"进入子文件夹继续递归处理: {subfolder}")
@@ -235,7 +240,9 @@ class RecursiveHandler:
             'other_files': [],
             'subfolders': [],
             'has_other_files': False,
-            'total_files': 0
+            'total_files': 0,
+            'has_exe': False,  # 是否包含exe文件
+            'should_stop_recursion': False  # 是否应该停止递归
         }
         
         try:
@@ -311,11 +318,21 @@ class RecursiveHandler:
                         result['other_files'].append(item_path)
                         result['has_other_files'] = True
                         self._send_status(f"其他文件: {item}")
+                        
+                        # 检查是否为exe文件
+                        if item.lower().endswith('.exe'):
+                            result['has_exe'] = True
+                            self._send_status(f"检测到exe文件: {item}")
         
         except (OSError, PermissionError) as e:
             self._send_status(f"无法访问文件夹 {folder_path}: {e}")
         
-        self._send_status(f"文件夹分析完成: 总文件{result['total_files']}, 压缩包{len(result['archives'])}, 其他{len(result['other_files'])}, 子文件夹{len(result['subfolders'])}")
+        # 检查是否应该停止递归：多个文件且包含exe
+        if result['total_files'] > 1 and result['has_exe']:
+            result['should_stop_recursion'] = True
+            self._send_status(f"检测到多个文件且包含exe，停止递归: {folder_path}")
+        
+        self._send_status(f"文件夹分析完成: 总文件{result['total_files']}, 压缩包{len(result['archives'])}, 其他{len(result['other_files'])}, 子文件夹{len(result['subfolders'])}, exe:{result['has_exe']}")
         
         return result
     
