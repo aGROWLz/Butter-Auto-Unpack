@@ -79,7 +79,8 @@ docs/
 tests/
 tools/
 logs/
-release/
+release/*
+!release/README.md
 
 # Test files (keep test structure but ignore outputs)
 tests/output/
