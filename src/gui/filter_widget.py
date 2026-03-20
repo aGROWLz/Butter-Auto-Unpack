@@ -21,10 +21,12 @@ class FilterWidget(QWidget):
     
     Signals:
         filter_changed: 筛选条件变化信号 (selected_statuses: List[str])
+        log_button_clicked: 日志按钮点击信号 (is_active: bool)
     """
     
     # 定义信号 - 传递选中的状态列表
     filter_changed = pyqtSignal(list)
+    log_button_clicked = pyqtSignal(bool)  # 日志按钮点击信号，传递是否选中
     
     # 状态定义
     STATUS_ALL = 'all'
@@ -34,6 +36,7 @@ class FilterWidget(QWidget):
     STATUS_PASSWORD_ERROR = 'password_error'
     STATUS_CORRUPTED = 'corrupted'
     STATUS_DELETED = 'deleted'
+    STATUS_LOG = 'log'  # 日志按钮状态
     
     # 状态显示文本映射
     STATUS_TEXT_MAP = {
@@ -100,6 +103,18 @@ class FilterWidget(QWidget):
             button = self._create_status_button(status)
             self._status_buttons[status] = button
             button_layout.addWidget(button)
+        
+        # 添加分隔线
+        button_layout.addSpacing(20)
+        
+        # 创建日志按钮
+        self.log_button = QPushButton('📋 日志')
+        self.log_button.setCheckable(True)
+        self.log_button.setMinimumWidth(80)
+        self.log_button.setMinimumHeight(30)
+        self.log_button.clicked.connect(self._on_log_button_clicked)
+        self._update_log_button_style()
+        button_layout.addWidget(self.log_button)
         
         # 添加弹性空间
         button_layout.addStretch()
@@ -206,6 +221,64 @@ class FilterWidget(QWidget):
         
         # 发送筛选变化信号
         self._emit_filter_changed()
+    
+    def _on_log_button_clicked(self) -> None:
+        """处理日志按钮点击事件"""
+        is_checked = self.log_button.isChecked()
+        
+        # 如果选中日志按钮，取消其他所有筛选按钮
+        if is_checked:
+            for status, button in self._status_buttons.items():
+                button.setChecked(False)
+                self._update_button_style(button, status)
+            self._selected_statuses.clear()
+        
+        # 更新日志按钮样式
+        self._update_log_button_style()
+        
+        # 发送日志按钮点击信号
+        self.log_button_clicked.emit(is_checked)
+    
+    def _update_log_button_style(self) -> None:
+        """更新日志按钮样式"""
+        if self.log_button.isChecked():
+            # 选中状态 - 蓝色
+            self.log_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #2196F3;
+                    border: 2px solid #4CAF50;
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    font-size: 12px;
+                }
+                QPushButton:hover {
+                    background-color: #42A5F5;
+                }
+            """)
+        else:
+            # 未选中状态
+            self.log_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #404040;
+                    border: 1px solid #666666;
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    color: #cccccc;
+                    font-size: 12px;
+                }
+                QPushButton:hover {
+                    background-color: #4a4a4a;
+                    border: 1px solid #777777;
+                    color: #ffffff;
+                }
+            """)
+    
+    def uncheck_log_button(self) -> None:
+        """取消日志按钮的选中状态"""
+        self.log_button.setChecked(False)
+        self._update_log_button_style()
     
     def _update_button_style(self, button: QPushButton, status: str) -> None:
         """更新按钮样式（黑暗模式适配）

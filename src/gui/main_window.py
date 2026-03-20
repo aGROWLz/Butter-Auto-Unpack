@@ -24,6 +24,7 @@ from ..extraction.extractor import Extractor
 from .file_list_widget import FileListWidget
 from .filter_widget import FilterWidget
 from .config_dialog import ConfigDialog
+from .log_widget import LogWidget
 
 
 class FileProcessingWorker(QThread):
@@ -85,11 +86,13 @@ class MainWindow(QMainWindow):
         # GUI组件
         self.file_list_widget = None
         self.filter_widget = None
+        self.log_widget = None  # 日志组件
         self.start_button = None
         self.stop_button = None
         self.config_button = None
         self.status_label = None
         self.progress_bar = None  # 进度条
+        self.is_log_view = False  # 是否显示日志视图
         
         # 监控状态
         self.is_monitoring = False
@@ -330,6 +333,10 @@ class MainWindow(QMainWindow):
             message: 状态消息
         """
         print(message)  # 在主线程中安全地打印消息
+        
+        # 添加到日志组件
+        if self.log_widget:
+            self.log_widget.add_log(message)
         
         # 如果是递归处理相关的成功消息，检查状态并刷新文件列表
         if any(keyword in message for keyword in ["成功解压嵌套压缩包", "成功解压单图片文件"]):
@@ -681,6 +688,7 @@ class MainWindow(QMainWindow):
         # 筛选控件
         self.filter_widget = FilterWidget()
         self.filter_widget.filter_changed.connect(self.on_filter_changed)
+        self.filter_widget.log_button_clicked.connect(self.on_log_button_clicked)
         main_layout.addWidget(self.filter_widget)
         
         # 文件列表控件
@@ -693,6 +701,11 @@ class MainWindow(QMainWindow):
         self.file_list_widget.batch_delete_files_clicked.connect(self.on_batch_delete_files_clicked)
         self.file_list_widget.batch_delete_records_clicked.connect(self.on_batch_delete_records_clicked)
         main_layout.addWidget(self.file_list_widget, 1)  # 占据剩余空间
+        
+        # 日志控件（初始隐藏）
+        self.log_widget = LogWidget()
+        self.log_widget.hide()
+        main_layout.addWidget(self.log_widget, 1)
         
         # 设置窗口居中
         self._center_window()
@@ -914,6 +927,13 @@ class MainWindow(QMainWindow):
         Args:
             selected_statuses: 选中的状态列表
         """
+        # 如果点击了其他筛选按钮，取消日志按钮的选中状态
+        if self.is_log_view and self.filter_widget:
+            self.filter_widget.uncheck_log_button()
+            self.is_log_view = False
+            self.log_widget.hide()
+            self.file_list_widget.show()
+        
         if not self.db:
             return
         
@@ -946,6 +966,25 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"筛选记录失败: {e}")
             QMessageBox.warning(self, '错误', f'筛选记录失败: {e}')
+    
+    def on_log_button_clicked(self, is_active: bool) -> None:
+        """处理日志按钮点击
+        
+        Args:
+            is_active: 是否激活日志视图
+        """
+        self.is_log_view = is_active
+        
+        if is_active:
+            # 显示日志视图，隐藏文件列表
+            self.file_list_widget.hide()
+            self.log_widget.show()
+        else:
+            # 显示文件列表，隐藏日志视图
+            self.log_widget.hide()
+            self.file_list_widget.show()
+            # 刷新文件列表
+            self.refresh_records()
     
     def on_open_folder_clicked(self, record_id: int) -> None:
         """处理打开文件夹按钮点击

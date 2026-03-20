@@ -133,7 +133,7 @@ class FileProcessor:
                     filename = os.path.basename(file_path)
                     moved_path = self._move_file(file_path, os.path.join(self.unpack_folder, filename))
                     if moved_path:
-                        record_id = self.db.create_record(filename, file_path)
+                        record_id = self.db.create_record(filename, moved_path)  # 使用移动后的路径
                         self._handle_archive(moved_path, record_id)
             elif file_type == 'image':
                 # 图片文件 - 需要检查是否真的是伪装的压缩包
