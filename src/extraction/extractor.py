@@ -84,7 +84,7 @@ class Extractor:
             # 开发环境
             base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         
-        return os.path.join(base_path, 'Bandizip', 'bz.exe')
+        return os.path.join(base_path, 'resources', 'bandizip', 'bz.exe')
     
     def check_7z_available(self) -> bool:
         """检查7z是否可用
@@ -124,20 +124,20 @@ class Extractor:
     
     def test_archive(self, archive_path: str, passwords: List[str] = None) -> ExtractionResult:
         """测试文件是否为有效的压缩包（不实际解压）
-        
+
         Args:
             archive_path: 压缩包路径
             passwords: 密码列表（可选）
-        
+
         Returns:
             ExtractionResult: 测试结果
         """
         self.logger.info(f"测试文件是否为压缩包: {archive_path}")
-        
+
         try:
             # 首先尝试无密码测试（使用空密码参数避免等待输入）
             cmd = [self.seven_zip_path, 't', '-t*', archive_path, '-p', '-y']
-            
+
             self.logger.info(f"执行无密码测试: {' '.join(cmd[:3])} -t* -p -y")
             result = subprocess.run(
                 cmd,
@@ -146,13 +146,16 @@ class Extractor:
                 timeout=30,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
-            
-            # 记录 7z 输出
+
+            # 限制日志输出长度，避免大输出占用内存
+            max_log_length = 1000
             if result.stdout:
-                self.logger.info(f"7z stdout:\n{result.stdout}")
+                stdout_preview = result.stdout[:max_log_length] + ("..." if len(result.stdout) > max_log_length else "")
+                self.logger.info(f"7z stdout:\n{stdout_preview}")
             if result.stderr:
-                self.logger.info(f"7z stderr:\n{result.stderr}")
-            
+                stderr_preview = result.stderr[:max_log_length] + ("..." if len(result.stderr) > max_log_length else "")
+                self.logger.info(f"7z stderr:\n{stderr_preview}")
+
             if result.returncode == 0:
                 self.logger.info(f"文件测试成功（无密码），确认为压缩包: {archive_path}")
                 return ExtractionResult(
@@ -160,17 +163,17 @@ class Extractor:
                     error_type='none',
                     error_message=''
                 )
-            
+
             self.logger.info(f"无密码测试失败，返回码: {result.returncode}")
-            
+
             # 如果无密码测试失败，且提供了密码列表，则尝试使用密码
             if passwords and len(passwords) > 0:
                 self.logger.info(f"开始尝试密码列表，共 {len(passwords)} 个密码")
-                
+
                 for i, password in enumerate(passwords, 1):
                     self.logger.info(f"尝试密码 {i}/{len(passwords)}: {'*' * len(password)}")
                     cmd_with_password = [self.seven_zip_path, 't', '-t*', archive_path, f'-p{password}', '-y']
-                    
+
                     result = subprocess.run(
                         cmd_with_password,
                         capture_output=True,
@@ -178,13 +181,15 @@ class Extractor:
                         timeout=30,
                         creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
                     )
-                    
-                    # 记录 7z 输出
+
+                    # 限制日志输出长度
                     if result.stdout:
-                        self.logger.info(f"7z stdout (密码 {i}):\n{result.stdout}")
+                        stdout_preview = result.stdout[:max_log_length] + ("..." if len(result.stdout) > max_log_length else "")
+                        self.logger.info(f"7z stdout (密码 {i}):\n{stdout_preview}")
                     if result.stderr:
-                        self.logger.info(f"7z stderr (密码 {i}):\n{result.stderr}")
-                    
+                        stderr_preview = result.stderr[:max_log_length] + ("..." if len(result.stderr) > max_log_length else "")
+                        self.logger.info(f"7z stderr (密码 {i}):\n{stderr_preview}")
+
                     if result.returncode == 0:
                         self.logger.info(f"文件测试成功（密码: {'*' * len(password)}），确认为压缩包: {archive_path}")
                         return ExtractionResult(
@@ -194,17 +199,17 @@ class Extractor:
                         )
                     else:
                         self.logger.info(f"密码 {i} 失败，返回码: {result.returncode}")
-                
+
                 self.logger.info(f"所有密码测试失败: {archive_path}")
             else:
                 self.logger.info(f"未提供密码列表，测试结束")
-            
+
             return ExtractionResult(
                 success=False,
                 error_type='not_archive',
-                error_message=f"不是有效的压缩包或密码错误: {result.stderr}"
+                error_message=f"不是有效的压缩包或密码错误: {result.stderr[:500] if result.stderr else '未知错误'}"
             )
-        
+
         except subprocess.TimeoutExpired:
             self.logger.error(f"测试超时: {archive_path}")
             return ExtractionResult(
@@ -293,6 +298,7 @@ class Extractor:
                 return True, '', False
             
             # 检查是否需要密码
+            self.logger.debug(f"检查错误信息是否为密码错误: '{error_msg}'")
             if self._is_password_error(error_msg):
                 self.logger.info(f"检测到需要密码: {try_path}")
                 
@@ -399,12 +405,12 @@ class Extractor:
     def _try_extract_with_bandizip(self, archive_path: str,
                                    output_dir: str, password: str = None) -> Tuple[bool, str]:
         """尝试使用Bandizip解压
-        
+
         Args:
             archive_path: 压缩包路径
             output_dir: 输出目录
             password: 密码（可选）
-        
+
         Returns:
             (是否成功, 错误信息)
         """
@@ -415,68 +421,81 @@ class Extractor:
             'x',  # 解压命令
             f'-o:{output_dir}',  # 输出目录
         ]
-        
+
         # 添加密码参数
         if password:
             cmd.append(f'-p:{password}')
             self.logger.info(f"准备执行Bandizip命令（使用密码）: {cmd[0]} x -o:{output_dir} -p:***")
         else:
             self.logger.info(f"准备执行Bandizip命令（无密码）: {cmd[0]} x -o:{output_dir}")
-        
+
         # 添加压缩包路径（必须是最后一个参数）
         cmd.append(archive_path)
-        
+
         process = None
         try:
+            # 使用 DEVNULL 丢弃输出，避免内存占用
+            # 大文件解压时输出可能非常大，会导致内存泄漏
             process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE,  # 提供 stdin 以便关闭
-                text=True,
-                encoding='utf-8',
-                errors='ignore',
+                stdout=subprocess.DEVNULL,  # 丢弃标准输出
+                stderr=subprocess.PIPE,     # 只保留错误输出
+                stdin=subprocess.DEVNULL,   # 关闭 stdin
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
             )
-            
+
             self.logger.info(f"Bandizip进程已启动，PID: {process.pid}")
-            
-            # 关闭 stdin，确保不会等待输入
-            if process.stdin:
-                process.stdin.close()
-                self.logger.debug("stdin 已关闭")
-            
-            # 使用 communicate 读取输出，设置超时
+
+            # 使用 wait 等待进程完成，设置超时
             try:
-                stdout, stderr = process.communicate(timeout=300)
-                returncode = process.returncode
-                
+                returncode = process.wait(timeout=300)
+
                 self.logger.info(f"Bandizip命令执行完成，返回码: {returncode}")
-                
-                # 记录输出
-                if stdout:
-                    self.logger.info(f"Bandizip stdout:\n{stdout}")
-                if stderr:
-                    self.logger.info(f"Bandizip stderr:\n{stderr}")
-                
-                # 检测密码提示（在输出中）
-                output = stdout + stderr
-                if 'Enter password' in output or 'Invalid password' in output:
+
+                # 只读取错误输出（通常较小）
+                stderr_output = ""
+                if process.stderr:
+                    try:
+                        stderr_output = process.stderr.read().decode('utf-8', errors='ignore')
+                        if stderr_output:
+                            self.logger.info(f"Bandizip stderr:\n{stderr_output}")
+                    except Exception as e:
+                        self.logger.debug(f"读取 stderr 失败: {e}")
+
+                # 检测密码提示（在错误输出中）
+                if 'Enter password' in stderr_output or 'Invalid password' in stderr_output:
                     self.logger.info("检测到密码提示")
                     return False, '需要密码'
-                
+
                 # Bandizip返回0表示成功
                 if returncode == 0:
                     return True, ''
                 else:
-                    return False, output
-                    
+                    # 检测密码相关错误
+                    # 1. 检查错误输出中是否包含密码关键词
+                    # 2. 返回码2或14通常表示需要密码
+                    # 3. 其他非零返回码且没有错误输出时，也可能是需要密码
+                    stderr_stripped = stderr_output.strip()
+                    if stderr_stripped:
+                        # 有错误输出，检查是否包含密码关键词
+                        error_lower = stderr_stripped.lower()
+                        password_keywords = ['password', 'encrypted', 'enter password', 'invalid password', 'wrong password']
+                        if any(keyword in error_lower for keyword in password_keywords):
+                            self.logger.info(f"错误输出中包含密码关键词，推测需要密码: {archive_path}")
+                            return False, 'password required'
+                        # 不包含密码关键词，返回原始错误
+                        return False, stderr_stripped
+                    else:
+                        # 没有错误输出，根据返回码推测
+                        self.logger.info(f"返回码为{returncode}且无错误输出，推测需要密码: {archive_path}")
+                        return False, 'password required'
+
             except subprocess.TimeoutExpired:
                 self.logger.error("Bandizip进程超时，强制终止")
                 process.kill()
                 process.wait()
                 return False, '解压超时'
-                
+
         except Exception as e:
             self.logger.error(f"Bandizip进程异常: {e}", exc_info=True)
             if process and process.poll() is None:
@@ -486,7 +505,7 @@ class Extractor:
                 except:
                     pass
             return False, f'解压异常: {str(e)}'
-        
+
         finally:
             if process and process.poll() is None:
                 try:

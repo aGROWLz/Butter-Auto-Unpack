@@ -68,14 +68,28 @@ class RecursiveHandler:
         # 首先检查是否为单图片文件夹
         is_single_image, image_path = self._is_single_image_folder(folder_path)
         if is_single_image:
+            # 检查图片是否已经被处理过
+            if image_path in self.processed_files:
+                self._send_status(f"单图片文件已在本次递归中处理过，跳过: {image_path}")
+                return
+            
             # 处理单图片文件
-            self._handle_single_image(image_path, passwords, current_depth)
-            # 处理完单图片后，再次检查文件夹（可能解压出了新内容）
-            self.process_extracted_folder(folder_path, passwords, current_depth + 1)
+            success = self._handle_single_image(image_path, passwords, current_depth)
+            # 只有在成功解压的情况下，才再次检查文件夹
+            if success:
+                self._send_status(f"单图片解压成功，再次检查文件夹: {folder_path}")
+                self.process_extracted_folder(folder_path, passwords, current_depth + 1)
+            else:
+                self._send_status(f"单图片解压失败或不是压缩包，停止递归: {folder_path}")
             return
         
         # 检查文件夹内容类型
         content_analysis = self._analyze_folder_content(folder_path)
+        
+        # 如果检测到多个文件且包含exe，停止递归处理
+        if content_analysis['should_stop_recursion']:
+            self._send_status(f"文件夹包含exe且文件数量大于1，停止递归处理: {folder_path}")
+            return
         
         # 处理子文件夹（递归进入子文件夹继续检索）
         for subfolder in content_analysis['subfolders']:
@@ -120,11 +134,15 @@ class RecursiveHandler:
             filename = os.path.basename(archive_path)
             record_id = None
             if self.db:
-                # 检查数据库中是否已有记录
+                # 检查数据库中是否已有记录（通过完整路径判断，避免不同文件夹中的同名文件被跳过）
                 existing_record = self.db.get_record_by_filename(filename)
                 if existing_record and existing_record.status in ['success']:
-                    self._send_status(f"文件已在数据库中标记为已处理，跳过: {archive_path}")
-                    continue
+                    # 检查路径是否相同，只有路径相同才跳过
+                    if existing_record.original_path == archive_path:
+                        self._send_status(f"文件已在数据库中标记为已处理，跳过: {archive_path}")
+                        continue
+                    else:
+                        self._send_status(f"发现同名文件但路径不同，继续处理: {archive_path}")
                 
                 record_id = self.db.create_record(filename, archive_path)
                 self.db.update_status(record_id, 'extracting')
@@ -184,8 +202,13 @@ class RecursiveHandler:
                     else:
                         self.db.update_status(record_id, 'failed', result.error_message)
         
-        # 递归处理当前文件夹（可能解压出了新的压缩包）
-        self.process_extracted_folder(folder_path, passwords, current_depth + 1)
+        # 只有在成功解压了压缩包的情况下，才需要递归处理当前文件夹
+        # 这样可以避免无限递归和内存泄漏
+        if archives:
+            self._send_status(f"检测到{len(archives)}个压缩包，递归处理当前文件夹: {folder_path}")
+            self.process_extracted_folder(folder_path, passwords, current_depth + 1)
+        else:
+            self._send_status(f"文件夹中没有需要处理的压缩包，停止递归: {folder_path}")
     
     def _find_archives(self, folder_path: str) -> List[str]:
         """查找文件夹中的所有压缩包
@@ -235,87 +258,84 @@ class RecursiveHandler:
             'other_files': [],
             'subfolders': [],
             'has_other_files': False,
-            'total_files': 0
+            'total_files': 0,
+            'has_exe': False,  # 是否包含exe文件
+            'should_stop_recursion': False  # 是否应该停止递归
         }
         
         try:
             # 获取文件夹内容列表
             items = os.listdir(folder_path)
-            self._send_status(f"文件夹 {folder_path} 包含 {len(items)} 个项目")
-            
-            # 遍历文件夹中的所有项目
+            # 只在文件夹内容较多时发送状态消息，减少日志输出
+            if len(items) > 10:
+                self._send_status(f"文件夹 {folder_path} 包含 {len(items)} 个项目")
+
+            # 第一遍扫描：统计文件数量和检测exe
+            temp_archives = []  # 临时存储可能的压缩包
+
             for item in items:
                 item_path = os.path.join(folder_path, item)
-                
+
                 # 处理子目录
                 if os.path.isdir(item_path):
                     result['subfolders'].append(item_path)
-                    self._send_status(f"递归分析发现子文件夹: {item}")
                     continue
-                
+
                 # 处理文件
                 result['total_files'] += 1
-                
+
+                # 检查是否为exe文件
+                if item.lower().endswith('.exe'):
+                    result['has_exe'] = True
+                    result['other_files'].append(item_path)
+                    continue
+
                 # 检查文件类型
                 file_type = FileTypeDetector.get_file_type(item_path)
-                
-                self._send_status(f"递归分析文件: {item} -> 类型: {file_type}")
-                
+
                 if file_type in ['archive', 'multi_volume']:
-                    # 检查是否已经处理过
-                    if self.db:
-                        existing_record = self.db.get_record_by_filename(item)
-                        if existing_record and existing_record.status in ['success']:
-                            self._send_status(f"文件已处理过，跳过: {item}")
-                            continue  # 跳过已处理的文件
-                    
-                    # 压缩包文件
-                    result['archives'].append(item_path)
-                    self._send_status(f"添加到处理列表: {item}")
+                    # 压缩包文件，先临时存储
+                    temp_archives.append((item_path, item, file_type))
                 elif file_type in ['image', 'video']:
-                    # 图片或视频文件 - 需要检查是否为伪装的压缩包
-                    if self.config.verify_media_files:
-                        # 验证是否真的是压缩包
-                        if self._is_disguised_archive(item_path):
-                            self._send_status(f"检测到伪装压缩包: {item}")
-                            should_add = True
+                    # 图片或视频文件
+                    result['other_files'].append(item_path)
+                    result['has_other_files'] = True
+                elif file_type == 'volume_part':
+                    # 分卷文件的非起始卷 - 忽略
+                    pass
+                else:
+                    # 其他类型文件
+                    result['other_files'].append(item_path)
+                    result['has_other_files'] = True
+            
+            # 检查是否应该停止递归：多个文件且包含exe
+            if result['total_files'] > 1 and result['has_exe']:
+                result['should_stop_recursion'] = True
+                self._send_status(f"检测到多个文件且包含exe，停止递归并跳过{len(temp_archives)}个压缩包: {folder_path}")
+                # 不处理任何压缩包，直接返回
+                return result
+            
+            # 第二遍处理：处理压缩包（只有在不满足停止条件时才处理）
+            for item_path, item, file_type in temp_archives:
+                # 检查是否已经处理过（通过完整路径判断）
+                if self.db:
+                    existing_record = self.db.get_record_by_filename(item)
+                    if existing_record and existing_record.status in ['success']:
+                        # 检查路径是否相同
+                        if existing_record.original_path == item_path:
+                            self._send_status(f"文件已处理过，跳过: {item}")
+                            continue
                         else:
-                            # 真正的图片/视频文件
-                            result['other_files'].append(item_path)
-                            result['has_other_files'] = True
-                            self._send_status(f"真实媒体文件: {item}")
-                            should_add = False
-                    else:
-                        # 不验证，直接当作伪装压缩包处理
-                        self._send_status(f"跳过验证，检测到媒体文件: {item}")
-                        should_add = True
-                    
-                    if should_add:
-                        # 检查重命名后的文件是否已处理过
-                        new_filename = item + self.config.image_archive_suffix
-                        if self.db:
-                            existing_record = self.db.get_record_by_filename(new_filename)
-                            if existing_record and existing_record.status in ['success']:
-                                self._send_status(f"伪装压缩包已处理过，跳过: {item}")
-                                continue
-                        
-                        # 添加到处理列表（作为需要重命名的伪装压缩包）
-                        result['archives'].append(item_path)
-                        self._send_status(f"添加伪装压缩包到处理列表: {item}")
-                    elif file_type == 'volume_part':
-                        # 分卷文件的非起始卷 - 不算作其他文件，但也不需要处理
-                        self._send_status(f"分卷非起始卷，忽略: {item}")
-                        # 不添加到 other_files，也不设置 has_other_files = True
-                    else:
-                        # 其他类型文件
-                        result['other_files'].append(item_path)
-                        result['has_other_files'] = True
-                        self._send_status(f"其他文件: {item}")
+                            self._send_status(f"发现同名文件但路径不同，继续处理: {item}")
+                
+                # 压缩包文件
+                result['archives'].append(item_path)
+                self._send_status(f"添加到处理列表: {item}")
         
         except (OSError, PermissionError) as e:
             self._send_status(f"无法访问文件夹 {folder_path}: {e}")
         
-        self._send_status(f"文件夹分析完成: 总文件{result['total_files']}, 压缩包{len(result['archives'])}, 其他{len(result['other_files'])}, 子文件夹{len(result['subfolders'])}")
+        self._send_status(f"文件夹分析完成: 总文件{result['total_files']}, 压缩包{len(result['archives'])}, 其他{len(result['other_files'])}, 子文件夹{len(result['subfolders'])}, exe:{result['has_exe']}")
         
         return result
     
@@ -348,70 +368,78 @@ class RecursiveHandler:
         
         return False, ''
     
-    def _handle_single_image(self, image_path: str, 
+    def _handle_single_image(self, image_path: str,
                             passwords: List[str],
-                            current_depth: int) -> None:
+                            current_depth: int) -> bool:
         """处理单图片文件（添加后缀并解压）
-        
+
         Args:
             image_path: 图片文件路径
             passwords: 密码列表
             current_depth: 当前递归深度
+
+        Returns:
+            bool: 解压是否成功
         """
         # 为图片添加配置的压缩格式后缀
         new_path = image_path + self.config.image_archive_suffix
-        
+
         try:
             # 检查是否已经处理过这个文件
             if image_path in self.processed_files:
                 self._send_status(f"单图片文件已在本次递归中处理过，跳过: {image_path}")
-                return
-            
+                return False
+
             # 标记为已处理
             self.processed_files.add(image_path)
-            
+
             # 为递归处理的单图片创建数据库记录
             filename = os.path.basename(image_path)
             record_id = None
             if self.db:
-                # 检查数据库中是否已有记录
+                # 检查数据库中是否已有记录（通过完整路径判断）
                 existing_record = self.db.get_record_by_filename(filename)
                 if existing_record and existing_record.status in ['success']:
-                    self._send_status(f"单图片文件已在数据库中标记为已处理，跳过: {image_path}")
-                    return
-                
+                    # 检查路径是否相同
+                    if existing_record.original_path == image_path:
+                        self._send_status(f"单图片文件已在数据库中标记为已处理，跳过: {image_path}")
+                        return False
+                    else:
+                        self._send_status(f"发现同名图片但路径不同，继续处理: {image_path}")
+
                 record_id = self.db.create_record(filename, image_path)
-            
+
             # 重命名文件（添加后缀）
             os.rename(image_path, new_path)
             self._send_status(f"为单图片添加后缀: {image_path} -> {new_path}")
-            
+
             # 更新数据库记录
             if self.db and record_id:
                 new_filename = os.path.basename(new_path)
                 self.db.update_filename(record_id, new_filename)
                 self.db.update_original_path(record_id, new_path)
                 self.db.update_status(record_id, 'extracting')
-            
+
             # 创建解压目录（与图片同名，不含扩展名）
             image_name = os.path.splitext(os.path.basename(image_path))[0]
             extract_dir = os.path.join(os.path.dirname(image_path), image_name)
-            
+
             # 尝试解压（已经创建了目标文件夹，不需要再创建子文件夹）
             result = self.extractor.extract(new_path, extract_dir, passwords, create_subfolder=False)
-            
+
             if result.success:
                 self._send_status(f"成功解压单图片文件: {new_path}")
-                
+
                 # 更新数据库状态
                 if self.db and record_id:
                     self.db.update_status(record_id, 'success')
-                
+
                 # 递归处理解压后的文件夹
                 self.process_extracted_folder(extract_dir, passwords, current_depth + 1)
+                return True
             else:
                 self._send_status(f"解压单图片文件失败: {new_path}, 错误: {result.error_message}")
-                
+
                 # 更新数据库状态
                 if self.db and record_id:
                     if result.error_type == 'password':
@@ -420,16 +448,18 @@ class RecursiveHandler:
                         self.db.update_status(record_id, 'corrupted', result.error_message)
                     else:
                         self.db.update_status(record_id, 'failed', result.error_message)
-                
+
                 # 如果解压失败，恢复原文件名
                 try:
                     os.rename(new_path, image_path)
                     self._send_status(f"解压失败，恢复原文件名: {new_path} -> {image_path}")
                 except OSError as e:
                     self._send_status(f"无法恢复文件名: {e}")
-        
+                return False
+
         except OSError as e:
             self._send_status(f"处理单图片文件时出错: {e}")
+            return False
     
     def _handle_volume_extraction(self, leader_path: str, extract_dir: str, passwords: List[str]):
         """处理分卷压缩包解压
