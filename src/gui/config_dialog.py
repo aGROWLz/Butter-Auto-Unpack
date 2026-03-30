@@ -11,11 +11,89 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QListWidget, QLabel,
     QFileDialog, QMessageBox, QGroupBox, QDialogButtonBox,
-    QCheckBox
+    QCheckBox, QListWidgetItem, QWidget, QApplication
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent
+from PyQt5.QtGui import QClipboard
 
 from ..config.config import Config
+
+
+class PasswordListWidget(QListWidget):
+    """自定义密码列表控件，支持悬浮显示复制按钮"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._copy_button = None
+        self._current_item = None
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
+        self.itemEntered.connect(self._on_item_entered)
+        
+    def _on_item_entered(self, item):
+        """鼠标进入列表项时显示复制按钮"""
+        self._show_copy_button(item)
+        
+    def _show_copy_button(self, item):
+        """在指定项上显示复制按钮"""
+        # 如果按钮已存在，先隐藏
+        if self._copy_button:
+            self._copy_button.hide()
+            
+        # 创建或复用复制按钮
+        if not self._copy_button:
+            self._copy_button = QPushButton("复制", self.viewport())
+            self._copy_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    border: none;
+                    color: white;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                    border-radius: 3px;
+                    min-height: 18px;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+            
+        self._current_item = item
+        self._copy_button.clicked.disconnect() if self._copy_button.receivers(self._copy_button.clicked) > 0 else None
+        self._copy_button.clicked.connect(lambda: self._copy_password(item))
+        
+        # 计算按钮位置（在列表项的右侧）
+        rect = self.visualItemRect(item)
+        btn_height = 20
+        btn_width = 40
+        x = rect.right() - btn_width - 5
+        y = rect.top() + (rect.height() - btn_height) // 2
+        self._copy_button.setGeometry(x, y, btn_width, btn_height)
+        self._copy_button.show()
+        self._copy_button.raise_()
+        
+    def _copy_password(self, item):
+        """复制密码到剪贴板"""
+        password = item.text()
+        clipboard = QApplication.clipboard()
+        clipboard.setText(password)
+        
+    def leaveEvent(self, event):
+        """鼠标离开列表时隐藏所有复制按钮"""
+        if self._copy_button:
+            self._copy_button.hide()
+        super().leaveEvent(event)
+        
+    def resizeEvent(self, event):
+        """窗口大小改变时更新按钮位置"""
+        super().resizeEvent(event)
+        if self._copy_button and self._copy_button.isVisible() and self._current_item:
+            rect = self.visualItemRect(self._current_item)
+            btn_height = 20
+            btn_width = 40
+            x = rect.right() - btn_width - 5
+            y = rect.top() + (rect.height() - btn_height) // 2
+            self._copy_button.setGeometry(x, y, btn_width, btn_height)
 
 
 class ConfigDialog(QDialog):
@@ -251,8 +329,8 @@ class ConfigDialog(QDialog):
         layout.addWidget(info_label)
         
         # 密码列表
-        self.password_list = QListWidget()
-        self.password_list.setSelectionMode(QListWidget.SingleSelection)
+        self.password_list = PasswordListWidget()
+        self.password_list.setSelectionMode(PasswordListWidget.SingleSelection)
         layout.addWidget(self.password_list)
         
         # 密码输入和按钮
