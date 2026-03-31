@@ -797,7 +797,8 @@ class MainWindow(QMainWindow):
             if self.file_monitor:
                 self.file_monitor.stop()
             
-            # 不再需要停止解压文件夹监控（已移除）
+            # 清理Bandizip进程（防止占用压缩包）
+            self._cleanup_bandizip_processes()
             
             # 更新UI状态
             self.is_monitoring = False
@@ -1548,6 +1549,9 @@ class MainWindow(QMainWindow):
         # 清理所有残留的7z进程
         self._cleanup_7z_processes()
         
+        # 清理所有残留的Bandizip进程
+        self._cleanup_bandizip_processes()
+        
         event.accept()
     
     def _cleanup_7z_processes(self):
@@ -1573,3 +1577,27 @@ class MainWindow(QMainWindow):
                 print("7z进程已清理")
         except Exception as e:
             print(f"清理7z进程时出错: {e}")
+    
+    def _cleanup_bandizip_processes(self):
+        """清理所有Bandizip进程"""
+        try:
+            import subprocess
+            # 查找所有bz.exe进程
+            result = subprocess.run(
+                ['tasklist', '/FI', 'IMAGENAME eq bz.exe', '/FO', 'CSV', '/NH'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            
+            if 'bz.exe' in result.stdout:
+                print("检测到残留的Bandizip进程，正在清理...")
+                # 强制终止所有bz.exe进程
+                subprocess.run(
+                    ['taskkill', '/F', '/IM', 'bz.exe'],
+                    capture_output=True,
+                    timeout=5
+                )
+                print("Bandizip进程已清理")
+        except Exception as e:
+            print(f"清理Bandizip进程时出错: {e}")
