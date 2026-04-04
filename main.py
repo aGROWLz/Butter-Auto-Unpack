@@ -122,7 +122,7 @@ def main():
     
     # 设置应用程序信息
     app.setApplicationName('Butter Auto Unpack')
-    app.setApplicationDisplayName('Butter自动解压')
+    app.setApplicationDisplayName('Butter-Auto-Unpack')
     app.setOrganizationName('Butter')
     app.setOrganizationDomain('butter.local')
     

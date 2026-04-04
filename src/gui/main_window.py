@@ -346,7 +346,23 @@ class MainWindow(QMainWindow):
     def init_ui(self) -> None:
         """初始化UI组件"""
         # 设置窗口标题和图标
-        self.setWindowTitle('🗜️ 自动解压管理器 - Auto Unpack Manager')
+        self.setWindowTitle('Butter-Auto-Unpack')
+        
+        # 设置窗口图标
+        import os
+        import sys
+        from PyQt5.QtGui import QIcon
+        
+        if getattr(sys, 'frozen', False):
+            # 打包后的exe环境
+            base_path = sys._MEIPASS
+        else:
+            # 开发环境
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        
+        icon_path = os.path.join(base_path, 'assets', 'icon.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         
         # 设置窗口大小和最小尺寸
         self.resize(1200, 700)

@@ -25,6 +25,12 @@ datas = [
     ('resources/bandizip/ark.x64.dll', 'resources/bandizip'),
     ('resources/bandizip/ark.x86.dll', 'resources/bandizip'),
     
+    # LZ4工具文件 - 用于解压.lz4格式
+    ('resources/lz4/lz4.exe', 'resources/lz4'),
+    
+    # Assets文件夹 - 图标等资源
+    ('assets/icon.ico', 'assets'),
+    
     # 配置文件模板
     ('config.template.json', '.'),
 ]
