@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧈 Butter Auto Unpack - 图标生成器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #2a2a3e 0%, #1a1a2e 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+            color: #fff;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #FFD54F, #FF8F00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            color: #888;
+            margin-bottom: 40px;
+        }
+        
+        .preview-container {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+        
+        .icon-box {
+            text-align: center;
+        }
+        
+        .icon-box h3 {
+            margin-bottom: 15px;
+            color: #aaa;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        canvas {
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .controls {
+            background: rgba(255,255,255,0.05);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #ccc;
+            font-size: 14px;
+        }
+        
+        .color-options {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .color-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .color-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .color-btn.active {
+            border-color: #fff;
+            box-shadow: 0 0 20px rgba(255,255,255,0.3);
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #FFD54F, #FF8F00);
+            color: #333;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(255, 213, 79, 0.4);
+        }
+        
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .info {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255, 213, 79, 0.1);
+            border-radius: 10px;
+            border-left: 4px solid #FFD54F;
+            max-width: 600px;
+        }
+        
+        .info h4 {
+            color: #FFD54F;
+            margin-bottom: 10px;
+        }
+        
+        .info p {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .info code {
+            background: rgba(0,0,0,0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #FFD54F;
+        }
+        
+        .butter-badge {
+            display: inline-block;
+            background: linear-gradient(45deg, #FFD54F, #FF8F00);
+            color: #333;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧈 Butter Auto Unpack</h1>
+    <p class="subtitle">图标生成器 - 黄油主题，突出自动解压<span class="butter-badge">AUTO</span></p>
+    
+    <div class="preview-container">
+        <div class="icon-box">
+            <h3>256x256 (主图标)</h3>
+            <canvas id="canvas256" width="256" height="256"></canvas>
+        </div>
+        <div class="icon-box">
+            <h3>128x128 (预览)</h3>
+            <canvas id="canvas128" width="128" height="128"></canvas>
+        </div>
+        <div class="icon-box">
+            <h3>64x64 (小图标)</h3>
+            <canvas id="canvas64" width="64" height="64"></canvas>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label>黄油色调</label>
+            <div class="color-options">
+                <div class="color-btn active" style="background: linear-gradient(135deg, #FFD54F, #FF8F00)" data-color="butter" title="经典黄油"></div>
+                <div class="color-btn" style="background: linear-gradient(135deg, #FFE082, #FFB300)" data-color="light" title="浅黄油"></div>
+                <div class="color-btn" style="background: linear-gradient(135deg, #FFCA28, #F57F17)" data-color="golden" title="金黄色"></div>
+                <div class="color-btn" style="background: linear-gradient(135deg, #FFF176, #FBC02D)" data-color="cream" title="奶油色"></div>
+                <div class="color-btn" style="background: linear-gradient(135deg, #FFECB3, #FF6F00)" data-color="honey" title="蜂蜜色"></div>
+            </div>
+        </div>
+        
+        <div class="btn-group">
+            <button class="btn-primary" onclick="downloadPNG()">📥 下载 PNG (256x256)</button>
+            <button class="btn-secondary" onclick="downloadICO()">📥 下载 ICO 图标</button>
+        </div>
+    </div>
+    
+    <div class="info">
+        <h4>📋 使用说明</h4>
+        <p>
+            1. 选择你喜欢的黄油色调<br>
+            2. 点击"下载 PNG"获取高清图标，或点击"下载 ICO"获取 Windows 图标文件<br>
+            3. 将下载的 <code>icon.ico</code> 放入 assets 文件夹<br>
+            4. 重新打包 exe 即可应用图标
+        </p>
+    </div>
+
+    <script>
+        // 黄油主题配色
+        const themes = {
+            butter: { 
+                primary: '#FFD54F', 
+                secondary: '#FF8F00', 
+                accent: '#FF6F00',
+                bg: '#FFF8E1'
+            },
+            light: { 
+                primary: '#FFE082', 
+                secondary: '#FFB300', 
+                accent: '#FF8F00',
+                bg: '#FFFDE7'
+            },
+            golden: { 
+                primary: '#FFCA28', 
+                secondary: '#F57F17', 
+                accent: '#E65100',
+                bg: '#FFF3E0'
+            },
+            cream: { 
+                primary: '#FFF176', 
+                secondary: '#FBC02D', 
+                accent: '#F57F17',
+                bg: '#FFFDE7'
+            },
+            honey: { 
+                primary: '#FFECB3', 
+                secondary: '#FF6F00', 
+                accent: '#E65100',
+                bg: '#FFF8E1'
+            }
+        };
+        
+        let currentTheme = 'butter';
+        
+        // 绘制图标
+        function drawIcon(canvas, size) {
+            const ctx = canvas.getContext('2d');
+            const theme = themes[currentTheme];
+            
+            // 清空画布
+            ctx.clearRect(0, 0, size, size);
+            
+            const padding = size * 0.05;
+            const cornerRadius = size * 0.18;
+            
+            // 绘制外发光效果
+            ctx.beginPath();
+            ctx.roundRect(padding-2, padding-2, size - padding*2 + 4, size - padding*2 + 4, cornerRadius + 2);
+            const glowGradient = ctx.createRadialGradient(size/2, size/2, size*0.3, size/2, size/2, size*0.6);
+            glowGradient.addColorStop(0, theme.primary + '40');
+            glowGradient.addColorStop(1, 'transparent');
+            ctx.fillStyle = glowGradient;
+            ctx.fill();
+            
+            // 绘制圆角矩形背景（黄油色渐变）
+            ctx.beginPath();
+            ctx.roundRect(padding, padding, size - padding * 2, size - padding * 2, cornerRadius);
+            
+            // 黄油渐变背景
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, theme.primary);
+            gradient.addColorStop(0.5, theme.bg);
+            gradient.addColorStop(1, theme.secondary);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // 绘制内边框
+            ctx.beginPath();
+            ctx.roundRect(padding + 3, padding + 3, size - padding * 2 - 6, size - padding * 2 - 6, cornerRadius - 3);
+            ctx.strokeStyle = theme.secondary + '30';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            const centerX = size / 2;
+            const centerY = size / 2;
+            
+            // 绘制"AUTO"自动标识（顶部）
+            ctx.fillStyle = theme.accent;
+            ctx.font = `bold ${size * 0.12}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('AUTO', centerX, centerY - size * 0.22);
+            
+            // 绘制压缩包盒子
+            const boxWidth = size * 0.55;
+            const boxHeight = size * 0.35;
+            
+            // 盒子阴影
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.beginPath();
+            ctx.roundRect(centerX - boxWidth/2 + 3, centerY - boxHeight/2 + size*0.05 + 3, boxWidth, boxHeight, size*0.04);
+            ctx.fill();
+            
+            // 盒子主体
+            ctx.fillStyle = '#FFFFFF';
+            ctx.beginPath();
+            ctx.roundRect(centerX - boxWidth/2, centerY - boxHeight/2 + size*0.05, boxWidth, boxHeight, size*0.04);
+            ctx.fill();
+            
+            // 盒子边框
+            ctx.strokeStyle = theme.secondary;
+            ctx.lineWidth = Math.max(2, size * 0.015);
+            ctx.stroke();
+            
+            // 绘制拉链（虚线）
+            ctx.strokeStyle = theme.accent;
+            ctx.lineWidth = Math.max(3, size * 0.025);
+            ctx.setLineDash([size*0.04, size*0.025]);
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - boxHeight/2 + size*0.05);
+            ctx.lineTo(centerX, centerY + boxHeight/2 + size*0.05);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // 绘制拉链头（圆形）
+            ctx.fillStyle = theme.secondary;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, size*0.06, 0, Math.PI*2);
+            ctx.fill();
+            
+            // 拉链头高光
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.beginPath();
+            ctx.arc(centerX - size*0.02, centerY - size*0.02, size*0.02, 0, Math.PI*2);
+            ctx.fill();
+            
+            // 绘制自动箭头（表示自动解压）
+            const arrowY = centerY + size * 0.32;
+            ctx.fillStyle = theme.accent;
+            
+            // 箭头主体
+            ctx.beginPath();
+            ctx.moveTo(centerX, arrowY + size * 0.08);
+            ctx.lineTo(centerX - size * 0.08, arrowY - size * 0.04);
+            ctx.lineTo(centerX - size * 0.03, arrowY - size * 0.04);
+            ctx.lineTo(centerX - size * 0.03, arrowY - size * 0.08);
+            ctx.lineTo(centerX + size * 0.03, arrowY - size * 0.08);
+            ctx.lineTo(centerX + size * 0.03, arrowY - size * 0.04);
+            ctx.lineTo(centerX + size * 0.08, arrowY - size * 0.04);
+            ctx.closePath();
+            ctx.fill();
+            
+            // 绘制光泽效果（顶部）
+            const shineGradient = ctx.createLinearGradient(0, padding, 0, size/2);
+            shineGradient.addColorStop(0, 'rgba(255,255,255,0.5)');
+            shineGradient.addColorStop(0.5, 'rgba(255,255,255,0.1)');
+            shineGradient.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = shineGradient;
+            ctx.beginPath();
+            ctx.roundRect(padding, padding, size - padding*2, size/2 - padding, [cornerRadius, cornerRadius, 0, 0]);
+            ctx.fill();
+            
+            // 绘制小黄油装饰点
+            ctx.fillStyle = theme.secondary + '60';
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.arc(padding + size*0.1 + i*size*0.08, size - padding - size*0.08, size*0.02, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+        
+        // 更新所有画布
+        function updateAllCanvases() {
+            drawIcon(document.getElementById('canvas256'), 256);
+            drawIcon(document.getElementById('canvas128'), 128);
+            drawIcon(document.getElementById('canvas64'), 64);
+        }
+        
+        // 颜色按钮点击事件
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentTheme = this.dataset.color;
+                updateAllCanvases();
+            });
+        });
+        
+        // 下载 PNG
+        function downloadPNG() {
+            const canvas = document.getElementById('canvas256');
+            const link = document.createElement('a');
+            link.download = 'icon.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // 下载 ICO
+        function downloadICO() {
+            const canvas = document.getElementById('canvas256');
+            const link = document.createElement('a');
+            link.download = 'icon.ico';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            
+            setTimeout(() => {
+                alert('提示：下载的是 PNG 格式文件。如需转换为真正的 ICO 格式，请使用在线转换工具，如：\nhttps://convertio.co/zh/png-ico/\n\n或者直接将 .png 文件重命名为 .ico 在大多数情况下也能工作。');
+            }, 100);
+        }
+        
+        // 初始化
+        updateAllCanvases();
+    </script>
+</body>
+</html>

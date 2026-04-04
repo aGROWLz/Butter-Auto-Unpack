@@ -87,7 +87,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon='icon.ico',              # 应用图标（如果有的话）
+    icon='assets/icon.ico',              # 应用图标
 )
 
 # 如果需要创建单目录分发（而不是单文件），可以使用COLLECT
