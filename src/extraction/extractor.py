@@ -345,6 +345,10 @@ class Extractor:
         Returns:
             ExtractionResult: 解压结果
         """
+        # 检查是否为LZ4文件，如果是则使用LZ4解压引擎
+        if archive_path.lower().endswith('.lz4'):
+            return self._extract_lz4(archive_path, output_dir, create_subfolder)
+        
         # 获取压缩包文件名（不含扩展名）
         archive_name = os.path.splitext(os.path.basename(archive_path))[0]
         
@@ -401,6 +405,62 @@ class Extractor:
             error_message=error_msg,
             used_password=None
         )
+    
+    def _extract_lz4(self, archive_path: str, output_dir: str,
+                     create_subfolder: bool = True) -> ExtractionResult:
+        """使用LZ4引擎解压LZ4文件
+        
+        LZ4特点：
+        - 只支持.lz4格式
+        - 不需要密码
+        - 直接解压内容到输出目录（不创建子文件夹）
+        
+        Args:
+            archive_path: LZ4文件路径
+            output_dir: 解压输出目录
+            create_subfolder: 是否创建子文件夹
+            
+        Returns:
+            ExtractionResult: 解压结果
+        """
+        from .lz4_extractor import LZ4Extractor
+        
+        # 获取文件名（去掉.lz4后缀作为输出子文件夹名）
+        base_name = os.path.basename(archive_path)
+        if base_name.lower().endswith('.lz4'):
+            folder_name = base_name[:-4]  # 去掉.lz4
+        else:
+            folder_name = base_name
+        
+        # LZ4直接解压到输出目录（不创建子文件夹）
+        # 但如果是递归解压需要，可以创建子文件夹
+        if create_subfolder:
+            actual_output_dir = os.path.join(output_dir, folder_name)
+        else:
+            actual_output_dir = output_dir
+        
+        self.logger.info(f"使用LZ4引擎解压: {archive_path} -> {actual_output_dir}")
+        
+        # 创建LZ4解压器并解压
+        lz4_extractor = LZ4Extractor()
+        success, error_msg = lz4_extractor.extract(archive_path, actual_output_dir)
+        
+        if success:
+            self.logger.info(f"LZ4解压成功: {archive_path}")
+            return ExtractionResult(
+                success=True,
+                error_type='none',
+                error_message='',
+                used_password=None
+            )
+        else:
+            self.logger.error(f"LZ4解压失败: {error_msg}")
+            return ExtractionResult(
+                success=False,
+                error_type='other',
+                error_message=error_msg,
+                used_password=None
+            )
     
     def _try_extract_with_bandizip(self, archive_path: str,
                                    output_dir: str, password: str = None) -> Tuple[bool, str]:

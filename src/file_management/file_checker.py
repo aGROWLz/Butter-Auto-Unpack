@@ -164,6 +164,16 @@ class FileChecker:
         # 解压文件夹应该在原始路径的同级目录
         folder_path = original_path.parent / folder_name
         
+        # 如果找不到，尝试去掉最后一层扩展名（处理类似逃少.jpg.zip的情况）
+        # 此时 original_path.stem 是逃少.jpg，但 Bandizip 会解压到逃少
+        if not (folder_path.exists() and folder_path.is_dir()):
+            # 去掉最后一层扩展名
+            folder_name_without_last_ext = Path(folder_name).stem
+            if folder_name_without_last_ext != folder_name:
+                folder_path_alt = original_path.parent / folder_name_without_last_ext
+                if folder_path_alt.exists() and folder_path_alt.is_dir():
+                    return True
+        
         return folder_path.exists() and folder_path.is_dir()
     
     def mark_as_deleted(self, record_id: int) -> None:
