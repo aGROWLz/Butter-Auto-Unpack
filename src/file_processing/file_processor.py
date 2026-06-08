@@ -15,7 +15,7 @@ from ..config.config import Config
 from ..database.database import Database
 from ..extraction.extractor import Extractor
 from ..recursive_processing.recursive_handler import RecursiveHandler
-from ..log_manager import get_logger, log_file_operation, log_exception
+from ..log_manager import get_logger, log_file_operation, log_exception, log_extraction_failure
 from .file_type_detector import FileTypeDetector
 
 
@@ -426,6 +426,9 @@ class FileProcessor:
             else:
                 self.db.update_status(record_id, 'failed', result.error_message)
                 self._send_status(f"解压失败: {file_path}, 错误: {result.error_message}")
+            
+            # 记录解压失败到专用日志文件
+            log_extraction_failure(file_path, result.error_type, result.error_message)
 
     def _handle_image(self, file_path: str, record_id: int) -> None:
         """处理图片文件（添加后缀）

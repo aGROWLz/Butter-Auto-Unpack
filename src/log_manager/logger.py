@@ -7,6 +7,72 @@ from pathlib import Path
 from datetime import datetime
 
 
+class DailyFileHandler(logging.Handler):
+    """按日期生成日志文件的处理器
+    
+    每天创建一个新的日志文件，文件名包含日期
+    日志是叠加式的，不会覆盖之前的日志
+    """
+    
+    def __init__(self, log_dir, prefix='extraction_failures', encoding='utf-8'):
+        """初始化日期文件处理器
+        
+        Args:
+            log_dir: 日志目录路径
+            prefix: 日志文件名前缀
+            encoding: 文件编码
+        """
+        super().__init__()
+        self.log_dir = Path(log_dir)
+        self.prefix = prefix
+        self.encoding = encoding
+        self._current_date = None
+        self._current_handler = None
+        
+        # 确保日志目录存在
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _get_log_file_path(self):
+        """获取当前日期的日志文件路径"""
+        today = datetime.now().strftime('%Y-%m-%d')
+        return self.log_dir / f'{self.prefix}_{today}.log'
+    
+    def _get_or_create_handler(self):
+        """获取或创建当前日期的文件处理器"""
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # 如果日期变化了，关闭旧的处理器
+        if self._current_date != today:
+            if self._current_handler:
+                self._current_handler.close()
+            
+            # 创建新的文件处理器（使用 append 模式）
+            log_file = self._get_log_file_path()
+            self._current_handler = logging.FileHandler(
+                log_file, 
+                mode='a',  # append 模式，叠加日志
+                encoding=self.encoding
+            )
+            self._current_handler.setFormatter(self.formatter)
+            self._current_date = today
+        
+        return self._current_handler
+    
+    def emit(self, record):
+        """发送日志记录"""
+        try:
+            handler = self._get_or_create_handler()
+            handler.emit(record)
+        except Exception:
+            self.handleError(record)
+    
+    def close(self):
+        """关闭处理器"""
+        if self._current_handler:
+            self._current_handler.close()
+        super().close()
+
+
 class LogManager:
     """日志管理器
     
@@ -26,6 +92,7 @@ class LogManager:
         """初始化日志管理器"""
         if not self._initialized:
             self.logger = None
+            self.failure_logger = None
             self.log_dir = None
             self._initialized = True
     
@@ -91,6 +158,9 @@ class LogManager:
             console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
         
+        # 设置解压失败专用日志
+        self._setup_failure_logger()
+        
         # 记录启动信息
         self.logger.info("=" * 60)
         self.logger.info("自动解压管理器启动")
@@ -100,6 +170,36 @@ class LogManager:
         self.logger.info(f"日志目录: {self.log_dir}")
         self.logger.info(f"日志级别: {logging.getLevelName(log_level)}")
         self.logger.info("=" * 60)
+    
+    def _setup_failure_logger(self):
+        """设置解压失败专用日志记录器"""
+        # 创建专用的 logger
+        self.failure_logger = logging.getLogger('Butter-Auto-Unpack.ExtractionFailure')
+        self.failure_logger.setLevel(logging.WARNING)
+        
+        # 清除已有的处理器
+        self.failure_logger.handlers.clear()
+        
+        # 创建格式器（更简洁的格式，便于分析）
+        failure_formatter = logging.Formatter(
+            '%(asctime)s | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        
+        # 使用按日期的文件处理器
+        failure_handler = DailyFileHandler(
+            self.log_dir,
+            prefix='extraction_failures',
+            encoding='utf-8'
+        )
+        failure_handler.setLevel(logging.WARNING)
+        failure_handler.setFormatter(failure_formatter)
+        self.failure_logger.addHandler(failure_handler)
+        
+        # 防止日志向上传播到主 logger
+        self.failure_logger.propagate = False
+        
+        self.logger.info("解压失败专用日志已设置")
     
     def _get_log_directory(self):
         """获取日志目录路径"""
@@ -165,6 +265,42 @@ class LogManager:
             if details:
                 message += f": {details}"
             self.logger.info(message)
+    
+    def log_extraction_failure(self, file_path, error_type, error_message, details=""):
+        """记录解压失败信息到专用日志文件
+        
+        Args:
+            file_path: 文件路径
+            error_type: 错误类型 ('password', 'corrupted', 'incomplete_volume', 'other')
+            error_message: 错误信息
+            details: 额外详情
+        """
+        if self.failure_logger:
+            # 构建简洁但信息完整的日志消息
+            filename = os.path.basename(file_path) if file_path else "未知文件"
+            
+            # 错误类型中文映射
+            error_type_cn = {
+                'password': '密码错误',
+                'corrupted': '文件损坏',
+                'incomplete_volume': '分卷不完整',
+                'other': '其他错误',
+                'timeout': '超时',
+                'not_archive': '非压缩包'
+            }.get(error_type, error_type)
+            
+            message = f"[{error_type_cn}] {filename}"
+            if error_message:
+                # 截取过长的错误信息
+                max_error_len = 500
+                error_short = error_message[:max_error_len] + ("..." if len(error_message) > max_error_len else "")
+                message += f" | {error_short}"
+            if details:
+                message += f" | {details}"
+            if file_path and file_path != filename:
+                message += f" | 路径: {file_path}"
+            
+            self.failure_logger.warning(message)
 
 
 # 全局日志管理器实例
@@ -194,3 +330,15 @@ def log_file_operation(operation, file_path, result="成功", details=""):
 def log_system_event(event, details=""):
     """记录系统事件（便捷函数）"""
     log_manager.log_system_event(event, details)
+
+
+def log_extraction_failure(file_path, error_type, error_message, details=""):
+    """记录解压失败到专用日志文件（便捷函数）
+    
+    Args:
+        file_path: 文件路径
+        error_type: 错误类型 ('password', 'corrupted', 'incomplete_volume', 'other')
+        error_message: 错误信息
+        details: 额外详情
+    """
+    log_manager.log_extraction_failure(file_path, error_type, error_message, details)

@@ -10,6 +10,7 @@ from typing import List, Tuple, Optional, Callable
 from ..extraction.extractor import Extractor
 from ..file_processing.file_type_detector import FileTypeDetector
 from ..config.config import Config
+from ..log_manager import log_extraction_failure
 
 
 class RecursiveHandler:
@@ -175,6 +176,9 @@ class RecursiveHandler:
                             self.db.update_status(record_id, 'corrupted', result.error_message)
                         else:
                             self.db.update_status(record_id, 'failed', result.error_message)
+                    
+                    # 记录解压失败到专用日志
+                    log_extraction_failure(archive_path, result.error_type, result.error_message, "递归处理-伪装压缩包")
                 
                 # 跳过通用的结果处理逻辑
                 continue
@@ -201,6 +205,9 @@ class RecursiveHandler:
                         self.db.update_status(record_id, 'corrupted', result.error_message)
                     else:
                         self.db.update_status(record_id, 'failed', result.error_message)
+                
+                # 记录解压失败到专用日志
+                log_extraction_failure(archive_path, result.error_type, result.error_message, "递归处理-嵌套压缩包")
         
         # 只有在成功解压了压缩包的情况下，才需要递归处理当前文件夹
         # 这样可以避免无限递归和内存泄漏
@@ -448,6 +455,9 @@ class RecursiveHandler:
                         self.db.update_status(record_id, 'corrupted', result.error_message)
                     else:
                         self.db.update_status(record_id, 'failed', result.error_message)
+                
+                # 记录解压失败到专用日志
+                log_extraction_failure(new_path, result.error_type, result.error_message, "递归处理-单图片")
 
                 # 如果解压失败，恢复原文件名
                 try:
@@ -490,6 +500,8 @@ class RecursiveHandler:
         if not is_complete:
             error_msg = f"分卷不完整，缺失: {', '.join(missing_volumes)}"
             self._send_status(f"分卷不完整: {leader_path}, 缺失: {missing_volumes}")
+            # 记录分卷不完整到专用日志
+            log_extraction_failure(leader_path, 'incomplete_volume', error_msg, "递归处理-分卷压缩包")
             from ..extraction.extractor import ExtractionResult
             return ExtractionResult(
                 success=False,
